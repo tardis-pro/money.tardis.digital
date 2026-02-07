@@ -14,6 +14,7 @@ export interface AnomalyCorrelationInput {
   zThreshold?: number;
   lookbackHours?: number;
   maxMatches?: number;
+  minEventScore?: number;
 }
 
 interface DataPoint {
@@ -198,6 +199,7 @@ export class AnomalyCorrelationService {
     const zThreshold = input.zThreshold ?? 2.5;
     const lookbackHours = input.lookbackHours ?? 72;
     const maxMatches = input.maxMatches ?? 3;
+    const minEventScore = input.minEventScore ?? 0;
 
     let source: "observations" | "outcomes" = "outcomes";
     let series: DataPoint[] = [];
@@ -240,6 +242,7 @@ export class AnomalyCorrelationService {
       const matches = tickerSignals
         .map((signal) => scoredEventMatch(signal, anomalyAtMs, anomaly.direction, lookbackHours))
         .filter((item): item is CorrelatedEvent => item !== null)
+        .filter((item) => item.score >= minEventScore)
         .sort((a, b) => b.score - a.score)
         .slice(0, maxMatches);
       return { ...anomaly, events: matches };
