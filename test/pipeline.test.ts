@@ -32,6 +32,7 @@ import { ResearchService } from "../src/services/research.js";
 import { GovernanceHardeningService } from "../src/services/governance-hardening.js";
 import { SreService } from "../src/services/sre.js";
 import { PersonalizationService } from "../src/services/personalization.js";
+import { PilotService } from "../src/services/pilot.js";
 
 test("pipeline run creates explainable signals with audit records", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
@@ -1019,6 +1020,36 @@ test("personalization service stores macros presets onboarding and adoption metr
     assert.equal(adoption.presets, 1);
     assert.equal(adoption.onboardingUsers, 1);
     assert.equal(adoption.avgCompletionRate, 0.8);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("pilot service tracks scorecards defects and launch readiness", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+    const service = new PilotService(store);
+
+    await service.addScorecard({
+      desk: "Macro Desk",
+      latencyScore: 0.82,
+      trustScore: 0.78,
+      utilityScore: 0.8,
+      reviewer: "desk-lead",
+    });
+    await service.addDefect({
+      title: "Toolbar focus glitch",
+      severity: "medium",
+      status: "open",
+      owner: "frontend-eng",
+    });
+
+    const readiness = await service.readiness();
+    assert.equal(readiness.scorecards, 1);
+    assert.equal(readiness.openCriticalDefects, 0);
+    assert.equal(typeof readiness.launchReady, "boolean");
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

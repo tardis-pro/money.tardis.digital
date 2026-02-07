@@ -99,6 +99,11 @@ Scope: Build a Bloomberg-like policy and market intelligence terminal for India-
   - Role-based workspace preset APIs added for one-action desk setup.
   - Onboarding/adoption APIs added for completion and workflow optimization metrics.
   - Remaining work for full Sprint 18 exits: in-terminal guided UX and behavior-driven recommendation loop.
+- Sprint 19 baseline implementation:
+  - Pilot scorecard APIs added for latency/trust/utility desk validation records.
+  - Defect tracking APIs added for critical-path triage before launch.
+  - Launch readiness API added with scorecard and critical-defect gate logic.
+  - Remaining work for full Sprint 19 exits: production pilot workflow instrumentation and sign-off automation.
 
 ## Delivery Structure
 

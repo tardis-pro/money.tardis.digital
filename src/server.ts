@@ -37,6 +37,7 @@ import { ResearchService } from "./services/research.js";
 import { GovernanceHardeningService } from "./services/governance-hardening.js";
 import { SreService } from "./services/sre.js";
 import { PersonalizationService } from "./services/personalization.js";
+import { PilotService } from "./services/pilot.js";
 
 async function terminalHtml(): Promise<string> {
   return readFile(path.join(process.cwd(), "public/terminal.html"), "utf8");
@@ -295,6 +296,21 @@ const onboardingSchema = z.object({
   sessionMinutes: z.number().int().min(0).max(10_000),
 });
 
+const pilotScorecardSchema = z.object({
+  desk: z.string().min(2).max(80),
+  latencyScore: z.number().min(0).max(1),
+  trustScore: z.number().min(0).max(1),
+  utilityScore: z.number().min(0).max(1),
+  reviewer: z.string().min(1).max(64),
+});
+
+const pilotDefectSchema = z.object({
+  title: z.string().min(3).max(140),
+  severity: z.enum(["critical", "high", "medium", "low"]),
+  status: z.enum(["open", "in-progress", "resolved"]),
+  owner: z.string().min(1).max(64),
+});
+
 const backfillRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   status: z.enum(["running", "completed", "failed"]).optional(),
@@ -346,6 +362,7 @@ async function buildServer() {
   const governanceHardening = new GovernanceHardeningService(store);
   const sre = new SreService(store);
   const personalization = new PersonalizationService(store);
+  const pilot = new PilotService(store);
 
   function requestUserId(request: { headers: Record<string, unknown> }): string {
     const header = request.headers["x-user-id"];
@@ -1035,6 +1052,54 @@ async function buildServer() {
       return access.response;
     }
     return personalization.adoption();
+  });
+
+  app.post("/api/pilot/scorecards", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = pilotScorecardSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return pilot.addScorecard(parsed.data);
+  });
+
+  app.post("/api/pilot/defects", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = pilotDefectSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return pilot.addDefect(parsed.data);
+  });
+
+  app.get("/api/pilot/scorecards", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return pilot.list("pilot-scorecard", 200);
+  });
+
+  app.get("/api/pilot/defects", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return pilot.list("defect", 200);
+  });
+
+  app.get("/api/pilot/readiness", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return pilot.readiness();
   });
 
   app.get("/api/watchlists", async (request, reply) => {

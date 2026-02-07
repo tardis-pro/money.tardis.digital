@@ -36,6 +36,7 @@ Open `http://localhost:3000`.
 - Governance hardening APIs for release-gate evidence, runbooks, and policy checks.
 - SRE APIs for SLO budgets, chaos drill records, and reliability status summaries.
 - Workspace personalization APIs for macros, presets, onboarding, and adoption metrics.
+- Pilot APIs for desk scorecards, defect tracking, and launch readiness.
 - React + Framer Motion + Tailwind terminal UI with live Recharts dashboards.
 - Supply-chain graph view (direct + indirect links) with node-level production/demand/import/export/surplus metrics.
 - Alert generation with thresholding, dedupe behavior, and cooldown suppression.
@@ -103,6 +104,11 @@ Open `http://localhost:3000`.
 - `GET /api/workspace/presets`
 - `POST /api/workspace/onboarding`
 - `GET /api/workspace/adoption`
+- `POST /api/pilot/scorecards`
+- `GET /api/pilot/scorecards`
+- `POST /api/pilot/defects`
+- `GET /api/pilot/defects`
+- `GET /api/pilot/readiness`
 - `GET /api/supply-chain-graph`
 - `GET /api/alerts`
 - `POST /api/feedback`
