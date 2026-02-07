@@ -94,6 +94,7 @@ const supplyChainQuerySchema = z.object({
 
 const backfillRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
+  status: z.enum(["running", "completed", "failed"]).optional(),
 });
 
 async function makeStore(): Promise<Store> {
@@ -415,7 +416,10 @@ async function buildServer() {
     }
     const state = await store.read();
     const limit = parsed.data.limit ?? 50;
-    return [...state.backfillRuns]
+    const filtered = parsed.data.status
+      ? state.backfillRuns.filter((run) => run.status === parsed.data.status)
+      : state.backfillRuns;
+    return [...filtered]
       .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
       .slice(0, limit);
   });
