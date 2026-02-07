@@ -34,6 +34,7 @@ import { PortfolioService } from "./services/portfolio.js";
 import { RiskService } from "./services/risk.js";
 import { AnomalyV3Service } from "./services/anomaly-v3.js";
 import { ResearchService } from "./services/research.js";
+import { GovernanceHardeningService } from "./services/governance-hardening.js";
 
 async function terminalHtml(): Promise<string> {
   return readFile(path.join(process.cwd(), "public/terminal.html"), "utf8");
@@ -244,6 +245,19 @@ const artifactCommentSchema = z.object({
   author: z.string().min(1).max(64),
 });
 
+const releaseGateSchema = z.object({
+  gateName: z.string().min(2).max(80),
+  actor: z.string().min(1).max(64),
+  checks: z.array(z.string().min(2).max(120)).min(1).max(20),
+});
+
+const runbookSchema = z.object({
+  name: z.string().min(2).max(120),
+  severity: z.enum(["sev1", "sev2", "sev3"]),
+  steps: z.array(z.string().min(4).max(400)).min(2).max(20),
+  owner: z.string().min(1).max(64),
+});
+
 const backfillRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   status: z.enum(["running", "completed", "failed"]).optional(),
@@ -292,6 +306,7 @@ async function buildServer() {
   const risk = new RiskService(store);
   const anomalyV3 = new AnomalyV3Service(store);
   const research = new ResearchService(store);
+  const governanceHardening = new GovernanceHardeningService(store);
 
   function requestUserId(request: { headers: Record<string, unknown> }): string {
     const header = request.headers["x-user-id"];
@@ -825,6 +840,54 @@ async function buildServer() {
     } catch (error) {
       return reply.code(404).send({ error: String(error) });
     }
+  });
+
+  app.post("/api/governance/release-gates", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = releaseGateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return governanceHardening.saveReleaseGate(parsed.data);
+  });
+
+  app.post("/api/governance/runbooks", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = runbookSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return governanceHardening.saveRunbook(parsed.data);
+  });
+
+  app.get("/api/governance/policy-checks", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return governanceHardening.policyChecks();
+  });
+
+  app.get("/api/governance/release-gates", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return governanceHardening.list("release-gate", 100);
+  });
+
+  app.get("/api/governance/runbooks", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return governanceHardening.list("incident-runbook", 100);
   });
 
   app.get("/api/watchlists", async (request, reply) => {

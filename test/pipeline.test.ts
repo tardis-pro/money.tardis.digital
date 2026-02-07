@@ -29,6 +29,7 @@ import { PortfolioService } from "../src/services/portfolio.js";
 import { RiskService } from "../src/services/risk.js";
 import { AnomalyV3Service } from "../src/services/anomaly-v3.js";
 import { ResearchService } from "../src/services/research.js";
+import { GovernanceHardeningService } from "../src/services/governance-hardening.js";
 
 test("pipeline run creates explainable signals with audit records", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
@@ -919,6 +920,38 @@ test("research service stores notebooks templates comments and evidence packs", 
     assert.equal(notebooks.length, 1);
     const templates = await research.list("query-template", 10);
     assert.equal(templates.length, 1);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("governance hardening service stores release gates and runbooks with policy checks", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+    const service = new GovernanceHardeningService(store);
+
+    const gate = await service.saveReleaseGate({
+      gateName: "Gate-D",
+      actor: "release-bot",
+      checks: ["entitlements", "data-quality", "audit-retention"],
+    });
+    assert.equal(gate.kind, "release-gate");
+
+    const runbook = await service.saveRunbook({
+      name: "Stream Outage Runbook",
+      severity: "sev1",
+      steps: ["Acknowledge incident", "Fail over stream bus", "Verify replay consistency"],
+      owner: "sre-lead",
+    });
+    assert.equal(runbook.kind, "incident-runbook");
+
+    const checks = await service.policyChecks();
+    assert.equal(typeof checks.pass, "boolean");
+
+    const gates = await service.list("release-gate", 10);
+    assert.equal(gates.length, 1);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

@@ -84,6 +84,11 @@ Scope: Build a Bloomberg-like policy and market intelligence terminal for India-
   - Query template APIs added for command-driven reusable research execution.
   - Evidence pack and comment APIs added for review-ready traceability artifacts.
   - Remaining work for full Sprint 15 exits: richer permissioning and notebook collaboration UX layer.
+- Sprint 16 baseline implementation:
+  - Governance release-gate API added with policy-check evidence snapshots.
+  - Incident runbook API added for formalized security/operational response procedures.
+  - Runtime policy-check API added for entitlement/data-quality/governance status.
+  - Remaining work for full Sprint 16 exits: CI/CD enforcement wiring and retention-policy automation.
 
 ## Delivery Structure
 

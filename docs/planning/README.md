@@ -40,3 +40,4 @@ This folder contains the Bloomberg-style terminal planning set requested for a 2
 - Sprint 13 baseline is actively implemented in code (risk policy and risk snapshot APIs for portfolio controls).
 - Sprint 14 baseline is actively implemented in code (attribution override and calibration reporting APIs).
 - Sprint 15 baseline is actively implemented in code (research notebooks/templates/comments/evidence APIs).
+- Sprint 16 baseline is actively implemented in code (release-gate, runbook, and runtime policy-check APIs).
