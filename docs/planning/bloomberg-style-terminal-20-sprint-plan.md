@@ -54,6 +54,11 @@ Scope: Build a Bloomberg-like policy and market intelligence terminal for India-
   - Chart template APIs added for saving and retrieving multi-timeframe chart setups.
   - Chart annotation API added to expose signal-event markers for ticker-focused chart overlays.
   - Remaining work for full Sprint 9 exits: synchronized crosshair linked panes and advanced study rendering controls.
+- Sprint 10 baseline implementation:
+  - Screening engine APIs added for saved screens with policy/factor/liquidity filters.
+  - Screen run orchestration added with ranked top-ticker outputs and rerunnable execution.
+  - Discovery feed and screen diagnostics APIs added for explainable "what changed" monitoring.
+  - Remaining work for full Sprint 10 exits: scheduled runner daemon and SLA instrumentation.
 
 ## Delivery Structure
 

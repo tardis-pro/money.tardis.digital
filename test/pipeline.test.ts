@@ -23,6 +23,7 @@ import { SourceDriftService } from "../src/services/source-drift.js";
 import { MarketSnapshotService } from "../src/services/market-snapshot.js";
 import { EntityLinkDiagnosticsService } from "../src/services/entity-link-diagnostics.js";
 import { ChartingService } from "../src/services/charting.js";
+import { ScreeningService } from "../src/services/screening.js";
 
 test("pipeline run creates explainable signals with audit records", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
@@ -652,6 +653,42 @@ test("charting service stores templates and emits ticker annotations", async () 
     const annotations = await charting.annotations("SBIN", 10);
     assert.ok(annotations.length >= 1);
     assert.ok(annotations.every((row) => row.ticker === "SBIN"));
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("screening service supports saved screens, runs, discovery feed, and diagnostics", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+    const pipeline = new SignalPipelineService(store);
+    await pipeline.run();
+
+    const screening = new ScreeningService(store);
+    const screen = await screening.saveScreen({
+      name: "Policy Momentum",
+      filters: {
+        minSignalScore: 0.4,
+        sectors: [],
+        minLiquidityScore: 0.2,
+        policyTags: ["policy", "incentive"],
+      },
+      scheduleCron: "*/30 * * * *",
+      createdBy: "demo-analyst",
+    });
+    assert.ok(screen.id.length > 0);
+
+    const run = await screening.runScreen(screen.id);
+    assert.equal(run.status, "completed");
+
+    const feed = await screening.discoveryFeed(20);
+    assert.ok(feed.length >= 1);
+
+    const diag = await screening.diagnostics(screen.id);
+    assert.ok(diag.totalRuns >= 1);
+    assert.equal(diag.scheduled, true);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

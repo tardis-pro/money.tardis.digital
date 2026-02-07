@@ -7,11 +7,14 @@ import type {
   ChartTemplate,
   CommandLogRecord,
   DataQualityIssue,
+  DiscoveryChangeRecord,
   EventRecord,
   FeedbackRecord,
   GovernanceChangeRecord,
   OutcomeRecord,
   RawArtifact,
+  ScreenDefinition,
+  ScreenRun,
   SignalRecord,
   SourceRegistryItem,
   StreamEventRecord,
@@ -39,6 +42,9 @@ const TABLES = [
   "stream_events",
   "stream_state",
   "chart_templates",
+  "screens",
+  "screen_runs",
+  "discovery_changes",
 ] as const;
 
 function rowPayload<T>(rows: Array<{ payload: T }>): T[] {
@@ -109,6 +115,15 @@ export class PostgresStore implements Store {
     await this.pool.query(
       "CREATE TABLE IF NOT EXISTS policy_signal.chart_templates (id text PRIMARY KEY, payload jsonb NOT NULL)",
     );
+    await this.pool.query(
+      "CREATE TABLE IF NOT EXISTS policy_signal.screens (id text PRIMARY KEY, payload jsonb NOT NULL)",
+    );
+    await this.pool.query(
+      "CREATE TABLE IF NOT EXISTS policy_signal.screen_runs (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
+    );
+    await this.pool.query(
+      "CREATE TABLE IF NOT EXISTS policy_signal.discovery_changes (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
+    );
 
     await this.pool.query("ALTER TABLE policy_signal.signals DROP CONSTRAINT IF EXISTS signals_pkey");
     await this.pool.query("ALTER TABLE policy_signal.events DROP CONSTRAINT IF EXISTS events_pkey");
@@ -166,6 +181,9 @@ export class PostgresStore implements Store {
       streamEvents,
       streamState,
       chartTemplates,
+      screens,
+      screenRuns,
+      discoveryChanges,
     ] =
       await Promise.all([
         this.pool.query<{ payload: SourceRegistryItem }>("SELECT payload FROM policy_signal.sources"),
@@ -190,6 +208,9 @@ export class PostgresStore implements Store {
         this.pool.query<{ payload: StreamEventRecord }>("SELECT payload FROM policy_signal.stream_events ORDER BY ts DESC"),
         this.pool.query<{ payload: { streamSequence: number } }>("SELECT payload FROM policy_signal.stream_state WHERE id = 'singleton'"),
         this.pool.query<{ payload: ChartTemplate }>("SELECT payload FROM policy_signal.chart_templates ORDER BY id ASC"),
+        this.pool.query<{ payload: ScreenDefinition }>("SELECT payload FROM policy_signal.screens ORDER BY id ASC"),
+        this.pool.query<{ payload: ScreenRun }>("SELECT payload FROM policy_signal.screen_runs ORDER BY ts DESC"),
+        this.pool.query<{ payload: DiscoveryChangeRecord }>("SELECT payload FROM policy_signal.discovery_changes ORDER BY ts DESC"),
       ]);
 
     return {
@@ -211,6 +232,9 @@ export class PostgresStore implements Store {
       streamEvents: rowPayload(streamEvents.rows),
       streamSequence: streamState.rows[0]?.payload.streamSequence ?? 0,
       chartTemplates: rowPayload(chartTemplates.rows),
+      screens: rowPayload(screens.rows),
+      screenRuns: rowPayload(screenRuns.rows),
+      discoveryChanges: rowPayload(discoveryChanges.rows),
     };
   }
 
@@ -335,6 +359,26 @@ export class PostgresStore implements Store {
         await client.query("INSERT INTO policy_signal.chart_templates (id, payload) VALUES ($1, $2)", [
           template.id,
           template,
+        ]);
+      }
+      for (const screen of state.screens) {
+        await client.query("INSERT INTO policy_signal.screens (id, payload) VALUES ($1, $2)", [
+          screen.id,
+          screen,
+        ]);
+      }
+      for (const run of state.screenRuns) {
+        await client.query("INSERT INTO policy_signal.screen_runs (id, ts, payload) VALUES ($1, $2, $3)", [
+          run.id,
+          run.startedAt,
+          run,
+        ]);
+      }
+      for (const change of state.discoveryChanges) {
+        await client.query("INSERT INTO policy_signal.discovery_changes (id, ts, payload) VALUES ($1, $2, $3)", [
+          change.id,
+          change.createdAt,
+          change,
         ]);
       }
       await client.query("COMMIT");

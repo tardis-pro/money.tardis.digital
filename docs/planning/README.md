@@ -34,3 +34,4 @@ This folder contains the Bloomberg-style terminal planning set requested for a 2
 - Sprint 7 baseline is actively implemented in code (adjustment-aware market snapshot and breadth view API).
 - Sprint 8 baseline is actively implemented in code (entity-link diagnostics and explainable reason trails API).
 - Sprint 9 baseline is actively implemented in code (chart template persistence and ticker event annotations APIs).
+- Sprint 10 baseline is actively implemented in code (screening/discovery APIs with run and diagnostics primitives).

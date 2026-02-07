@@ -27,6 +27,7 @@ Open `http://localhost:3000`.
 - Market snapshot API with adjustment-aware price and breadth metrics.
 - Entity-link diagnostics API with confidence coverage and explainable link-reason trails.
 - Charting workspace APIs for saved templates and event annotations by ticker.
+- Screening/discovery APIs for saved screens, reruns, change feed, and diagnostics.
 - React + Framer Motion + Tailwind terminal UI with live Recharts dashboards.
 - Supply-chain graph view (direct + indirect links) with node-level production/demand/import/export/surplus metrics.
 - Alert generation with thresholding, dedupe behavior, and cooldown suppression.
@@ -51,6 +52,11 @@ Open `http://localhost:3000`.
 - `POST /api/chart/templates`
 - `GET /api/chart/templates`
 - `GET /api/chart/annotations?ticker=SBIN&limit=25`
+- `POST /api/screens`
+- `GET /api/screens`
+- `POST /api/screens/:screenId/run`
+- `GET /api/discovery/feed?limit=50`
+- `GET /api/screens/:screenId/diagnostics`
 - `GET /api/supply-chain-graph`
 - `GET /api/alerts`
 - `POST /api/feedback`

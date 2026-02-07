@@ -380,3 +380,40 @@ export interface ChartAnnotation {
   direction: Direction;
   confidence: number;
 }
+
+export interface ScreenDefinition {
+  id: string;
+  name: string;
+  filters: {
+    minSignalScore: number;
+    sectors: string[];
+    minLiquidityScore: number;
+    policyTags: string[];
+  };
+  scheduleCron: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScreenRun {
+  id: string;
+  screenId: string;
+  startedAt: string;
+  completedAt: string | null;
+  status: "running" | "completed" | "failed";
+  resultCount: number;
+  topTickers: string[];
+  error: string | null;
+}
+
+export interface DiscoveryChangeRecord {
+  id: string;
+  screenId: string;
+  runId: string;
+  ticker: string;
+  rank: number;
+  reason: string;
+  score: number;
+  createdAt: string;
+}

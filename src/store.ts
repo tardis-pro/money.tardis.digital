@@ -3,15 +3,18 @@ import type {
   AccessAuditRecord,
   AlertRecord,
   AuditRecord,
-  CommandLogRecord,
   ChartTemplate,
+  CommandLogRecord,
   DataQualityIssue,
+  DiscoveryChangeRecord,
   EventRecord,
   FeedbackRecord,
   GovernanceChangeRecord,
   BackfillRunRecord,
   OutcomeRecord,
   RawArtifact,
+  ScreenDefinition,
+  ScreenRun,
   SignalRecord,
   SourceRegistryItem,
   StreamEventRecord,
@@ -39,6 +42,9 @@ export interface StateStore {
   streamEvents: StreamEventRecord[];
   streamSequence: number;
   chartTemplates: ChartTemplate[];
+  screens: ScreenDefinition[];
+  screenRuns: ScreenRun[];
+  discoveryChanges: DiscoveryChangeRecord[];
 }
 
 export interface Store {
@@ -69,6 +75,9 @@ function makeDefaultState(): StateStore {
     streamEvents: [],
     streamSequence: 0,
     chartTemplates: [],
+    screens: [],
+    screenRuns: [],
+    discoveryChanges: [],
   };
 }
 
@@ -173,6 +182,9 @@ export class JsonStore implements Store {
       streamEvents: loaded.streamEvents ?? fallback.streamEvents,
       streamSequence: loaded.streamSequence ?? fallback.streamSequence,
       chartTemplates: loaded.chartTemplates ?? fallback.chartTemplates,
+      screens: loaded.screens ?? fallback.screens,
+      screenRuns: loaded.screenRuns ?? fallback.screenRuns,
+      discoveryChanges: loaded.discoveryChanges ?? fallback.discoveryChanges,
     };
   }
 

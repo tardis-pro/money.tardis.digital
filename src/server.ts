@@ -28,6 +28,7 @@ import { SourceDriftService } from "./services/source-drift.js";
 import { MarketSnapshotService } from "./services/market-snapshot.js";
 import { EntityLinkDiagnosticsService } from "./services/entity-link-diagnostics.js";
 import { ChartingService } from "./services/charting.js";
+import { ScreeningService } from "./services/screening.js";
 
 async function terminalHtml(): Promise<string> {
   return readFile(path.join(process.cwd(), "public/terminal.html"), "utf8");
@@ -144,6 +145,22 @@ const chartAnnotationsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
 });
 
+const screenCreateSchema = z.object({
+  name: z.string().min(2).max(80),
+  filters: z.object({
+    minSignalScore: z.number().min(0).max(1),
+    sectors: z.array(z.string().min(1).max(60)).max(20),
+    minLiquidityScore: z.number().min(0).max(1),
+    policyTags: z.array(z.string().min(1).max(60)).max(20),
+  }),
+  scheduleCron: z.string().min(5).max(80).nullable(),
+  createdBy: z.string().min(1).max(64),
+});
+
+const discoveryFeedQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).optional(),
+});
+
 const backfillRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   status: z.enum(["running", "completed", "failed"]).optional(),
@@ -186,6 +203,7 @@ async function buildServer() {
   const marketSnapshot = new MarketSnapshotService(store);
   const entityLinkDiagnostics = new EntityLinkDiagnosticsService(store);
   const charting = new ChartingService(store);
+  const screening = new ScreeningService(store);
 
   function requestUserId(request: { headers: Record<string, unknown> }): string {
     const header = request.headers["x-user-id"];
@@ -398,6 +416,64 @@ async function buildServer() {
       return reply.code(400).send({ error: parsed.error.issues });
     }
     return charting.annotations(parsed.data.ticker, parsed.data.limit ?? 25);
+  });
+
+  app.post("/api/screens", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = screenCreateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return screening.saveScreen(parsed.data);
+  });
+
+  app.get("/api/screens", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return screening.listScreens();
+  });
+
+  app.post("/api/screens/:screenId/run", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const { screenId } = request.params as { screenId: string };
+    try {
+      return await screening.runScreen(screenId);
+    } catch (error) {
+      return reply.code(404).send({ error: String(error) });
+    }
+  });
+
+  app.get("/api/discovery/feed", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = discoveryFeedQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return screening.discoveryFeed(parsed.data.limit ?? 50);
+  });
+
+  app.get("/api/screens/:screenId/diagnostics", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const { screenId } = request.params as { screenId: string };
+    try {
+      return await screening.diagnostics(screenId);
+    } catch (error) {
+      return reply.code(404).send({ error: String(error) });
+    }
   });
 
   app.get("/api/watchlists", async (request, reply) => {
