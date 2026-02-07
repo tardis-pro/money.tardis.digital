@@ -1,6 +1,7 @@
 import path from "node:path";
 import type {
   AccessAuditRecord,
+  AttributionOverride,
   AlertDispatchRecord,
   AlertRuleConfig,
   AlertRecord,
@@ -57,6 +58,7 @@ export interface StateStore {
   scenarioBookmarks: ScenarioBookmark[];
   riskPolicies: RiskPolicy[];
   riskSnapshots: RiskSnapshot[];
+  attributionOverrides: AttributionOverride[];
 }
 
 export interface Store {
@@ -96,6 +98,7 @@ function makeDefaultState(): StateStore {
     scenarioBookmarks: [],
     riskPolicies: [],
     riskSnapshots: [],
+    attributionOverrides: [],
   };
 }
 
@@ -209,6 +212,7 @@ export class JsonStore implements Store {
       scenarioBookmarks: loaded.scenarioBookmarks ?? fallback.scenarioBookmarks,
       riskPolicies: loaded.riskPolicies ?? fallback.riskPolicies,
       riskSnapshots: loaded.riskSnapshots ?? fallback.riskSnapshots,
+      attributionOverrides: loaded.attributionOverrides ?? fallback.attributionOverrides,
     };
   }
 

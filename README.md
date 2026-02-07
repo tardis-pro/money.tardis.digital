@@ -31,6 +31,7 @@ Open `http://localhost:3000`.
 - Alert orchestration APIs for composite rule config, routing, and quality metrics.
 - Portfolio workspace APIs for positions, exposure, attribution, and scenario bookmarks.
 - Risk terminal APIs for policy controls and portfolio risk snapshots.
+- Anomaly v3 APIs for analyst attribution overrides and calibration reports.
 - React + Framer Motion + Tailwind terminal UI with live Recharts dashboards.
 - Supply-chain graph view (direct + indirect links) with node-level production/demand/import/export/surplus metrics.
 - Alert generation with thresholding, dedupe behavior, and cooldown suppression.
@@ -73,6 +74,9 @@ Open `http://localhost:3000`.
 - `POST /api/portfolios/:portfolioId/risk-policy`
 - `POST /api/portfolios/:portfolioId/risk-snapshot`
 - `GET /api/portfolios/:portfolioId/risk-snapshots?limit=50`
+- `POST /api/anomalies/overrides`
+- `GET /api/anomalies/overrides?limit=100`
+- `GET /api/anomalies/calibration`
 - `GET /api/supply-chain-graph`
 - `GET /api/alerts`
 - `POST /api/feedback`

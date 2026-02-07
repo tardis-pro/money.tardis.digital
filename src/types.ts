@@ -519,3 +519,27 @@ export interface RiskSnapshot {
   breachReasons: string[];
   createdAt: string;
 }
+
+export interface AttributionOverride {
+  id: string;
+  anomalyId: string;
+  ticker: string;
+  actor: string;
+  previousConfidence: number;
+  overrideConfidence: number;
+  reason: string;
+  createdAt: string;
+}
+
+export interface AttributionCalibrationPoint {
+  bucket: string;
+  predicted: number;
+  observed: number;
+  count: number;
+}
+
+export interface AttributionCalibrationReport {
+  generatedAt: string;
+  meanAbsoluteError: number;
+  points: AttributionCalibrationPoint[];
+}

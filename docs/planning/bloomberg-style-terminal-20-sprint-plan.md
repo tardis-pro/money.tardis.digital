@@ -74,6 +74,11 @@ Scope: Build a Bloomberg-like policy and market intelligence terminal for India-
   - Risk snapshot API added for repeatable portfolio risk-state captures with breach reasons.
   - Snapshot history API added for desk-level monitoring of risk evolution.
   - Remaining work for full Sprint 13 exits: approval workflow and stress-template lineage.
+- Sprint 14 baseline implementation:
+  - Attribution override API added for analyst dispute/override capture.
+  - Calibration report API added with bucketed predicted-vs-observed quality points.
+  - Override history API added to feed retraining and governance evidence.
+  - Remaining work for full Sprint 14 exits: multi-model blending and benchmark harness automation.
 
 ## Delivery Structure
 

@@ -27,6 +27,7 @@ import { ScreeningService } from "../src/services/screening.js";
 import { AlertOrchestratorService } from "../src/services/alert-orchestrator.js";
 import { PortfolioService } from "../src/services/portfolio.js";
 import { RiskService } from "../src/services/risk.js";
+import { AnomalyV3Service } from "../src/services/anomaly-v3.js";
 
 test("pipeline run creates explainable signals with audit records", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
@@ -827,6 +828,56 @@ test("risk service enforces policy and produces reproducible snapshots", async (
 
     const rows = await riskService.snapshots(portfolio.id, 10);
     assert.equal(rows.length, 1);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("anomaly v3 service supports overrides and calibration reporting", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+    const pipeline = new SignalPipelineService(store);
+    await pipeline.run();
+
+    await store.transaction((state) => {
+      if (state.signals.length === 0) {
+        return;
+      }
+      const signal = state.signals[0];
+      if (!signal) {
+        return;
+      }
+      state.outcomes.push({
+        id: makeId("outcome"),
+        signalId: signal.id,
+        horizon: signal.impact.horizon,
+        predictedDirection: signal.impact.direction,
+        realizedReturn: 0.01,
+        realizedDirection: "positive",
+        matched: true,
+        evaluatedAt: nowIso(),
+      });
+    });
+
+    const service = new AnomalyV3Service(store);
+    const override = await service.addOverride({
+      anomalyId: "anomaly-001",
+      ticker: "SBIN",
+      actor: "demo-analyst",
+      previousConfidence: 0.42,
+      overrideConfidence: 0.71,
+      reason: "Desk validated attribution with higher confidence",
+    });
+    assert.ok(override.id.length > 0);
+
+    const overrides = await service.listOverrides(10);
+    assert.equal(overrides.length, 1);
+
+    const report = await service.calibration();
+    assert.equal(report.points.length, 5);
+    assert.ok(report.meanAbsoluteError >= 0);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

@@ -32,6 +32,7 @@ import { ScreeningService } from "./services/screening.js";
 import { AlertOrchestratorService } from "./services/alert-orchestrator.js";
 import { PortfolioService } from "./services/portfolio.js";
 import { RiskService } from "./services/risk.js";
+import { AnomalyV3Service } from "./services/anomaly-v3.js";
 
 async function terminalHtml(): Promise<string> {
   return readFile(path.join(process.cwd(), "public/terminal.html"), "utf8");
@@ -210,6 +211,19 @@ const riskSnapshotsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
 });
 
+const anomalyOverrideSchema = z.object({
+  anomalyId: z.string().min(1).max(64),
+  ticker: z.string().min(1).max(24),
+  actor: z.string().min(1).max(64),
+  previousConfidence: z.number().min(0).max(1),
+  overrideConfidence: z.number().min(0).max(1),
+  reason: z.string().min(5).max(400),
+});
+
+const anomalyOverridesQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).optional(),
+});
+
 const backfillRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   status: z.enum(["running", "completed", "failed"]).optional(),
@@ -256,6 +270,7 @@ async function buildServer() {
   const alertOrchestrator = new AlertOrchestratorService(store);
   const portfolio = new PortfolioService(store);
   const risk = new RiskService(store);
+  const anomalyV3 = new AnomalyV3Service(store);
 
   function requestUserId(request: { headers: Record<string, unknown> }): string {
     const header = request.headers["x-user-id"];
@@ -692,6 +707,38 @@ async function buildServer() {
     }
     const { portfolioId } = request.params as { portfolioId: string };
     return risk.snapshots(portfolioId, parsed.data.limit ?? 50);
+  });
+
+  app.post("/api/anomalies/overrides", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = anomalyOverrideSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return anomalyV3.addOverride(parsed.data);
+  });
+
+  app.get("/api/anomalies/overrides", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = anomalyOverridesQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return anomalyV3.listOverrides(parsed.data.limit ?? 100);
+  });
+
+  app.get("/api/anomalies/calibration", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return anomalyV3.calibration();
   });
 
   app.get("/api/watchlists", async (request, reply) => {
