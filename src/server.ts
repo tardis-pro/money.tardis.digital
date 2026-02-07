@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import type { TerminalRoute } from "./types.js";
 import historicalSources from "./config/historical-sources.json" with { type: "json" };
 import { PostgresStore } from "./store-postgres.js";
 import { JsonStore } from "./store.js";
@@ -20,6 +21,8 @@ import { SourceRegistryService } from "./services/source-registry.js";
 import { SourceReliabilityLoopService } from "./services/source-reliability-loop.js";
 import { SupplyChainGraphService } from "./services/supply-chain-graph.js";
 import { TerminalService } from "./services/terminal.js";
+import { IdentityService } from "./services/identity.js";
+import { StreamBusService } from "./services/stream-bus.js";
 
 async function terminalHtml(): Promise<string> {
   return readFile(path.join(process.cwd(), "public/terminal.html"), "utf8");
@@ -94,6 +97,23 @@ const supplyChainQuerySchema = z.object({
   watchlistId: z.string().optional(),
 });
 
+const terminalCommandInputSchema = z.object({
+  input: z.string().max(128),
+});
+
+const terminalCommandQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).optional(),
+});
+
+const identityRoleUpdateSchema = z.object({
+  role: z.enum(["viewer", "analyst", "operator", "admin"]),
+});
+
+const streamReplayQuerySchema = z.object({
+  fromSequence: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().positive().max(500).optional(),
+});
+
 const backfillRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   status: z.enum(["running", "completed", "failed"]).optional(),
@@ -129,6 +149,55 @@ async function buildServer() {
   const supplyChain = new SupplyChainGraphService(store);
   const backfill = new HistoricalBackfillService(store);
   const anomalyCorrelation = new AnomalyCorrelationService(store);
+  const identity = new IdentityService(store);
+  const streamBus = new StreamBusService(store);
+
+  function requestUserId(request: { headers: Record<string, unknown> }): string {
+    const header = request.headers["x-user-id"];
+    if (typeof header === "string" && header.trim().length > 0) {
+      return header.trim();
+    }
+    return "demo-analyst";
+  }
+
+  async function ensureRouteAccess(
+    request: { headers: Record<string, unknown> },
+    reply: { code: (statusCode: number) => { send: (payload: unknown) => unknown } },
+    route: TerminalRoute,
+  ): Promise<{ allowed: true; userId: string } | { allowed: false; response: unknown }> {
+    const userId = requestUserId(request);
+    const user = await identity.getUser(userId);
+    if (!user) {
+      return {
+        allowed: false,
+        response: reply.code(401).send({ error: `Unknown user ${userId}` }),
+      };
+    }
+    const auth = await identity.authorizeRoute(user, route);
+    await identity.auditAccess({
+      userId: user.id,
+      role: user.role,
+      action: "route.access",
+      resource: route,
+      allowed: auth.allowed,
+      reason: auth.reason,
+    });
+    if (!auth.allowed) {
+      await streamBus.publish({
+        type: "identity.denied",
+        payload: {
+          userId: user.id,
+          route,
+          reason: auth.reason,
+        },
+      });
+      return {
+        allowed: false,
+        response: reply.code(403).send({ error: auth.reason }),
+      };
+    }
+    return { allowed: true, userId };
+  }
 
   app.get("/", async () => terminalHtml());
 
@@ -190,19 +259,39 @@ async function buildServer() {
       return reply.code(400).send({ error: parsedQuery.error.issues });
     }
     const result = await pipeline.run(parsedQuery.data.sourceId);
+    await streamBus.publish({
+      type: "pipeline.run.completed",
+      payload: {
+        ingested: result.ingested,
+        producedSignals: result.producedSignals,
+        alertsCreated: result.alertsCreated,
+      },
+    });
     return reply.send(result);
   });
 
   app.get("/api/signals", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
     const querySchema = z.object({ limit: z.coerce.number().int().positive().max(200).optional() });
     const parsed = querySchema.safeParse(request.query);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues });
     }
-    return terminal.topSignals(parsed.data.limit ?? 25);
+    const user = await identity.requireUser(access.userId);
+    return terminal.topSignals(parsed.data.limit ?? 25, user.sourceEntitlements);
   });
 
-  app.get("/api/heatmap", async () => terminal.sectorHeatmap());
+  app.get("/api/heatmap", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "heatmap");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const user = await identity.requireUser(access.userId);
+    return terminal.sectorHeatmap(user.sourceEntitlements);
+  });
 
   app.get("/api/supply-chain-graph", async (request, reply) => {
     const parsed = supplyChainQuerySchema.safeParse(request.query);
@@ -212,16 +301,154 @@ async function buildServer() {
     return supplyChain.buildGraph(parsed.data.watchlistId);
   });
 
-  app.get("/api/watchlists", async () => terminal.watchlists());
-
-  app.get("/api/watchlists/:watchlistId/signals", async (request) => {
-    const { watchlistId } = request.params as { watchlistId: string };
-    return terminal.signalsForWatchlist(watchlistId);
+  app.get("/api/watchlists", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "watchlists");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return terminal.watchlists();
   });
 
-  app.get("/api/sources/:sourceId/signals", async (request) => {
+  app.post("/api/terminal/command", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "overview");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = terminalCommandInputSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    const result = await terminal.runCommand(parsed.data.input);
+    await streamBus.publish({
+      type: "command.executed",
+      payload: {
+        route: result.route,
+        status: result.status,
+        latencyMs: result.latencyMs,
+      },
+    });
+    return result;
+  });
+
+  app.get("/api/terminal/commands", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = terminalCommandQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return terminal.commandLogs(parsed.data.limit ?? 50);
+  });
+
+  app.get("/api/identity/me", async (request, reply) => {
+    const userId = requestUserId(request);
+    const user = await identity.getUser(userId);
+    if (!user) {
+      return reply.code(401).send({ error: `Unknown user ${userId}` });
+    }
+    return user;
+  });
+
+  app.get("/api/identity/users", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const user = await identity.requireUser(access.userId);
+    const auth = await identity.authorizeRole(user, ["admin", "operator"]);
+    await identity.auditAccess({
+      userId: user.id,
+      role: user.role,
+      action: "identity.list-users",
+      resource: "identity",
+      allowed: auth.allowed,
+      reason: auth.reason,
+    });
+    if (!auth.allowed) {
+      return reply.code(403).send({ error: auth.reason });
+    }
+    return identity.listUsers();
+  });
+
+  app.post("/api/identity/users/:userId/role", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const caller = await identity.requireUser(access.userId);
+    const roleCheck = await identity.authorizeRole(caller, ["admin"]);
+    if (!roleCheck.allowed) {
+      return reply.code(403).send({ error: roleCheck.reason });
+    }
+    const parsed = identityRoleUpdateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    try {
+      const { userId } = request.params as { userId: string };
+      const updated = await identity.updateUserRole(userId, parsed.data);
+      await streamBus.publish({
+        type: "identity.updated",
+        payload: {
+          userId: updated.id,
+          role: updated.role,
+          actor: caller.id,
+        },
+      });
+      return updated;
+    } catch (error) {
+      return reply.code(404).send({ error: String(error) });
+    }
+  });
+
+  app.get("/api/access-audits", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return identity.listAccessAudits(100);
+  });
+
+  app.get("/api/stream/events", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = streamReplayQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return streamBus.replay(parsed.data.fromSequence, parsed.data.limit ?? 200);
+  });
+
+  app.get("/api/stream/health", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return streamBus.health();
+  });
+
+  app.get("/api/watchlists/:watchlistId/signals", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "watchlists");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const { watchlistId } = request.params as { watchlistId: string };
+    const user = await identity.requireUser(access.userId);
+    return terminal.signalsForWatchlist(watchlistId, user.sourceEntitlements);
+  });
+
+  app.get("/api/sources/:sourceId/signals", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
     const { sourceId } = request.params as { sourceId: string };
-    return terminal.sourceDrillDown(sourceId);
+    const user = await identity.requireUser(access.userId);
+    return terminal.sourceDrillDown(sourceId, user.sourceEntitlements);
   });
 
   app.get("/api/alerts", async () => {
@@ -315,7 +542,16 @@ async function buildServer() {
       return reply.code(400).send({ error: parsed.error.issues });
     }
     try {
-      return await governance.log(parsed.data);
+      const change = await governance.log(parsed.data);
+      await streamBus.publish({
+        type: "governance.changed",
+        payload: {
+          category: change.category,
+          actor: change.actor,
+          rollbackReady: change.rollbackReady,
+        },
+      });
+      return change;
     } catch (error) {
       return reply.code(400).send({ error: String(error) });
     }

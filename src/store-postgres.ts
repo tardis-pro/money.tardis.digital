@@ -1,8 +1,10 @@
 import { Pool } from "pg";
 import type {
+  AccessAuditRecord,
   AlertRecord,
   AuditRecord,
   BackfillRunRecord,
+  CommandLogRecord,
   DataQualityIssue,
   EventRecord,
   FeedbackRecord,
@@ -11,6 +13,8 @@ import type {
   RawArtifact,
   SignalRecord,
   SourceRegistryItem,
+  StreamEventRecord,
+  UserProfile,
   Watchlist,
 } from "./types.js";
 import type { StateStore, Store } from "./store.js";
@@ -28,6 +32,11 @@ const TABLES = [
   "governance_changes",
   "backfill_runs",
   "watchlists",
+  "command_logs",
+  "user_profiles",
+  "access_audits",
+  "stream_events",
+  "stream_state",
 ] as const;
 
 function rowPayload<T>(rows: Array<{ payload: T }>): T[] {
@@ -80,6 +89,21 @@ export class PostgresStore implements Store {
     await this.pool.query(
       "CREATE TABLE IF NOT EXISTS policy_signal.backfill_runs (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
     );
+    await this.pool.query(
+      "CREATE TABLE IF NOT EXISTS policy_signal.command_logs (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
+    );
+    await this.pool.query(
+      "CREATE TABLE IF NOT EXISTS policy_signal.user_profiles (id text PRIMARY KEY, payload jsonb NOT NULL)",
+    );
+    await this.pool.query(
+      "CREATE TABLE IF NOT EXISTS policy_signal.access_audits (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
+    );
+    await this.pool.query(
+      "CREATE TABLE IF NOT EXISTS policy_signal.stream_events (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
+    );
+    await this.pool.query(
+      "CREATE TABLE IF NOT EXISTS policy_signal.stream_state (id text PRIMARY KEY, payload jsonb NOT NULL)",
+    );
 
     await this.pool.query("ALTER TABLE policy_signal.signals DROP CONSTRAINT IF EXISTS signals_pkey");
     await this.pool.query("ALTER TABLE policy_signal.events DROP CONSTRAINT IF EXISTS events_pkey");
@@ -131,6 +155,11 @@ export class PostgresStore implements Store {
       governanceChanges,
       backfillRuns,
       watchlists,
+      commandLogs,
+      userProfiles,
+      accessAudits,
+      streamEvents,
+      streamState,
     ] =
       await Promise.all([
         this.pool.query<{ payload: SourceRegistryItem }>("SELECT payload FROM policy_signal.sources"),
@@ -149,6 +178,11 @@ export class PostgresStore implements Store {
         ),
         this.pool.query<{ payload: BackfillRunRecord }>("SELECT payload FROM policy_signal.backfill_runs ORDER BY ts DESC"),
         this.pool.query<{ payload: Watchlist }>("SELECT payload FROM policy_signal.watchlists"),
+        this.pool.query<{ payload: CommandLogRecord }>("SELECT payload FROM policy_signal.command_logs ORDER BY ts DESC"),
+        this.pool.query<{ payload: UserProfile }>("SELECT payload FROM policy_signal.user_profiles"),
+        this.pool.query<{ payload: AccessAuditRecord }>("SELECT payload FROM policy_signal.access_audits ORDER BY ts DESC"),
+        this.pool.query<{ payload: StreamEventRecord }>("SELECT payload FROM policy_signal.stream_events ORDER BY ts DESC"),
+        this.pool.query<{ payload: { streamSequence: number } }>("SELECT payload FROM policy_signal.stream_state WHERE id = 'singleton'"),
       ]);
 
     return {
@@ -164,6 +198,11 @@ export class PostgresStore implements Store {
       governanceChanges: rowPayload(governanceChanges.rows),
       backfillRuns: rowPayload(backfillRuns.rows),
       watchlists: rowPayload(watchlists.rows),
+      commandLogs: rowPayload(commandLogs.rows),
+      userProfiles: rowPayload(userProfiles.rows),
+      accessAudits: rowPayload(accessAudits.rows),
+      streamEvents: rowPayload(streamEvents.rows),
+      streamSequence: streamState.rows[0]?.payload.streamSequence ?? 0,
     };
   }
 
@@ -185,6 +224,12 @@ export class PostgresStore implements Store {
         await client.query("INSERT INTO policy_signal.watchlists (id, payload) VALUES ($1, $2)", [
           watchlist.id,
           watchlist,
+        ]);
+      }
+      for (const userProfile of state.userProfiles) {
+        await client.query("INSERT INTO policy_signal.user_profiles (id, payload) VALUES ($1, $2)", [
+          userProfile.id,
+          userProfile,
         ]);
       }
       for (const artifact of state.artifacts) {
@@ -254,6 +299,30 @@ export class PostgresStore implements Store {
           run,
         ]);
       }
+      for (const commandLog of state.commandLogs) {
+        await client.query("INSERT INTO policy_signal.command_logs (id, ts, payload) VALUES ($1, $2, $3)", [
+          commandLog.id,
+          commandLog.executedAt,
+          commandLog,
+        ]);
+      }
+      for (const accessAudit of state.accessAudits) {
+        await client.query("INSERT INTO policy_signal.access_audits (id, ts, payload) VALUES ($1, $2, $3)", [
+          accessAudit.id,
+          accessAudit.createdAt,
+          accessAudit,
+        ]);
+      }
+      for (const streamEvent of state.streamEvents) {
+        await client.query("INSERT INTO policy_signal.stream_events (id, ts, payload) VALUES ($1, $2, $3)", [
+          streamEvent.id,
+          streamEvent.publishedAt,
+          streamEvent,
+        ]);
+      }
+      await client.query("INSERT INTO policy_signal.stream_state (id, payload) VALUES ('singleton', $1)", [
+        { streamSequence: state.streamSequence },
+      ]);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");

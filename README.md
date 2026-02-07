@@ -19,6 +19,9 @@ Open `http://localhost:3000`.
 - Parsing and normalization with language hinting (`en`, `hi`, `mixed`, `unknown`) and evidence snippets.
 - Event classification, entity linking, impact scoring, and probabilistic prediction.
 - Ranked terminal feed, sector heatmap, source drill-down API, and explainability rationale.
+- Command-driven terminal routing with keyboard shortcuts (`Ctrl/Cmd + K`), parser dispatch, and telemetry logs.
+- Identity and entitlement baseline with per-user route/source access controls and access audit logs (`x-user-id` header).
+- Stream event bus baseline with durable event sequence, replay API, and stream health metrics.
 - React + Framer Motion + Tailwind terminal UI with live Recharts dashboards.
 - Supply-chain graph view (direct + indirect links) with node-level production/demand/import/export/surplus metrics.
 - Alert generation with thresholding, dedupe behavior, and cooldown suppression.
@@ -51,6 +54,14 @@ Open `http://localhost:3000`.
 - `GET /api/outcomes/summary`
 - `GET /api/governance`
 - `POST /api/governance`
+- `POST /api/terminal/command`
+- `GET /api/terminal/commands`
+- `GET /api/identity/me`
+- `GET /api/identity/users`
+- `POST /api/identity/users/:userId/role`
+- `GET /api/access-audits`
+- `GET /api/stream/events?fromSequence=0&limit=200`
+- `GET /api/stream/health`
 - `POST /api/screenipy/run`
 - `POST /api/model/train`
 - `POST /api/backfill/notable`

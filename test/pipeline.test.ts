@@ -14,6 +14,9 @@ import { SignalPipelineService } from "../src/services/pipeline.js";
 import { SourceRegistryService } from "../src/services/source-registry.js";
 import { SourceReliabilityLoopService } from "../src/services/source-reliability-loop.js";
 import { SupplyChainGraphService } from "../src/services/supply-chain-graph.js";
+import { TerminalService } from "../src/services/terminal.js";
+import { IdentityService } from "../src/services/identity.js";
+import { StreamBusService } from "../src/services/stream-bus.js";
 
 test("pipeline run creates explainable signals with audit records", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
@@ -383,6 +386,79 @@ test("anomaly requireEvents can filter out weak matches", async () => {
     assert.equal(result.anomaliesWithEvents, 0);
     assert.equal(result.totalEventLinks, 0);
     assert.equal(result.anomalies.length, 0);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("terminal command parser dispatches routes and stores telemetry", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+
+    const terminal = new TerminalService(store);
+    const command = await terminal.runCommand("signals");
+    assert.equal(command.status, "success");
+    assert.equal(command.route, "signals");
+    assert.ok(command.latencyMs >= 1);
+
+    const empty = await terminal.runCommand("   ");
+    assert.equal(empty.status, "error");
+    assert.equal(empty.errorMessage, "Command cannot be empty");
+
+    const logs = await terminal.commandLogs(10);
+    assert.equal(logs.length, 2);
+    assert.ok(logs.some((row) => row.status === "error" && row.errorMessage === "Command cannot be empty"));
+    assert.ok(logs.some((row) => row.route === "signals" && row.status === "success"));
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("identity authorization and stream bus replay provide S3/S4 baseline", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+    const identity = new IdentityService(store);
+    const streamBus = new StreamBusService(store);
+
+    const viewer = await identity.requireUser("demo-viewer");
+    const routeAuth = await identity.authorizeRoute(viewer, "signals");
+    assert.equal(routeAuth.allowed, true);
+
+    const sourceAuth = await identity.authorizeSource(viewer, "pib_press");
+    assert.equal(sourceAuth.allowed, false);
+    await identity.auditAccess({
+      userId: viewer.id,
+      role: viewer.role,
+      action: "source.access",
+      resource: "pib_press",
+      allowed: sourceAuth.allowed,
+      reason: sourceAuth.reason,
+    });
+
+    const published = await streamBus.publish({
+      type: "identity.denied",
+      payload: {
+        userId: viewer.id,
+        reason: sourceAuth.reason,
+      },
+    });
+    assert.equal(published.sequence, 1);
+
+    const replay = await streamBus.replay(0, 10);
+    assert.equal(replay.length, 1);
+    assert.equal(replay[0]?.type, "identity.denied");
+
+    const health = await streamBus.health();
+    assert.equal(health.latestSequence, 1);
+    assert.ok(health.eventsLastMinute >= 1);
+
+    const audits = await identity.listAccessAudits(10);
+    assert.equal(audits.length, 1);
+    assert.equal(audits[0]?.allowed, false);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

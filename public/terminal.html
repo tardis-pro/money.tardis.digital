@@ -92,31 +92,47 @@
         return relation === "direct" ? "#3dd6b5" : "#7ab8ff";
       }
 
+      const COMMAND_HINTS = ["signals", "heatmap", "alerts", "supply", "watchlists", "system", "overview"];
+
+      function panelClass(route, activeRoute, baseClass) {
+        const isActive = route === activeRoute;
+        return `${baseClass} ${isActive ? "ring-1 ring-teal-300/50" : ""}`.trim();
+      }
+
       function App() {
         const [loading, setLoading] = useState(true);
         const [running, setRunning] = useState(false);
         const [error, setError] = useState("");
+        const [commandInput, setCommandInput] = useState("");
+        const [commandStatus, setCommandStatus] = useState("");
+        const [activeRoute, setActiveRoute] = useState("overview");
         const [signals, setSignals] = useState([]);
         const [heatmap, setHeatmap] = useState([]);
         const [alerts, setAlerts] = useState([]);
         const [outcomes, setOutcomes] = useState({ total: 0, hitRate: 0, averageReturn: 0 });
         const [supplyGraph, setSupplyGraph] = useState({ nodes: [], edges: [] });
+        const [commandLogs, setCommandLogs] = useState([]);
+        const [watchlists, setWatchlists] = useState([]);
 
         const refresh = async () => {
           try {
             setError("");
-            const [signalsData, heatmapData, alertsData, outcomeData, supplyData] = await Promise.all([
+            const [signalsData, heatmapData, alertsData, outcomeData, supplyData, commandData, watchlistData] = await Promise.all([
               fetchJSON("/api/signals?limit=40"),
               fetchJSON("/api/heatmap"),
               fetchJSON("/api/alerts"),
               fetchJSON("/api/outcomes/summary"),
               fetchJSON("/api/supply-chain-graph"),
+              fetchJSON("/api/terminal/commands?limit=12"),
+              fetchJSON("/api/watchlists"),
             ]);
             setSignals(signalsData);
             setHeatmap(heatmapData);
             setAlerts(alertsData);
             setOutcomes(outcomeData);
             setSupplyGraph(supplyData);
+            setCommandLogs(commandData);
+            setWatchlists(watchlistData);
           } catch (err) {
             setError(err instanceof Error ? err.message : String(err));
           } finally {
@@ -136,11 +152,61 @@
           }
         };
 
+        const runCommand = async (event) => {
+          event.preventDefault();
+          try {
+            const response = await fetchJSON("/api/terminal/command", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ input: commandInput }),
+            });
+            if (response.status === "error") {
+              setCommandStatus(response.errorMessage || "Command failed");
+              return;
+            }
+            setCommandStatus(`Route: ${response.route} (${response.latencyMs}ms)`);
+            setActiveRoute(response.route);
+            setCommandInput("");
+            const latest = await fetchJSON("/api/terminal/commands?limit=12");
+            setCommandLogs(latest);
+          } catch (err) {
+            setCommandStatus(err instanceof Error ? err.message : String(err));
+          }
+        };
+
         useEffect(() => {
           refresh();
           const id = setInterval(refresh, 12000);
           return () => clearInterval(id);
         }, []);
+
+        useEffect(() => {
+          const onKeyDown = (event) => {
+            if (event.key === "Escape") {
+              setActiveRoute("overview");
+              return;
+            }
+            if (event.key === "k" && (event.ctrlKey || event.metaKey)) {
+              event.preventDefault();
+              const commandBox = document.getElementById("terminal-command-input");
+              if (commandBox) {
+                commandBox.focus();
+              }
+            }
+          };
+          window.addEventListener("keydown", onKeyDown);
+          return () => window.removeEventListener("keydown", onKeyDown);
+        }, []);
+
+        useEffect(() => {
+          if (activeRoute === "overview") {
+            return;
+          }
+          const target = document.getElementById(`route-${activeRoute}`);
+          if (target) {
+            target.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        }, [activeRoute]);
 
         const timelineData = useMemo(() => {
           return [...signals]
@@ -216,7 +282,8 @@
               initial=${{ opacity: 0, y: 20 }}
               animate=${{ opacity: 1, y: 0 }}
               transition=${{ duration: 0.45 }}
-              className="rounded-3xl border border-teal-200/15 bg-steel/75 p-6 shadow-glow backdrop-blur"
+              id="route-system"
+              className=${panelClass("system", activeRoute, "rounded-3xl border border-teal-200/15 bg-steel/75 p-6 shadow-glow backdrop-blur")}
             >
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
@@ -249,6 +316,29 @@
                 ? html`<div className="mt-4 rounded-xl border border-red-300/40 bg-red-950/30 px-4 py-2 text-sm text-red-200">${error}</div>`
                 : null}
 
+              <form onSubmit=${runCommand} className="mt-4 rounded-2xl border border-teal-200/20 bg-slate-950/40 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-display text-xs uppercase tracking-[0.2em] text-teal-200/80">Command</span>
+                  <input
+                    id="terminal-command-input"
+                    value=${commandInput}
+                    onInput=${(event) => setCommandInput(event.target.value)}
+                    placeholder="Type command: signals, heatmap, alerts, supply, watchlists, system"
+                    className="min-w-[260px] flex-1 rounded-lg border border-slate-400/30 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-teal-300/70"
+                  />
+                  <button
+                    type="submit"
+                    className="rounded-lg border border-teal-300/40 bg-teal-400/10 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-teal-100 hover:bg-teal-400/20"
+                  >
+                    Go
+                  </button>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-cloud">
+                  <span>Shortcuts: Ctrl/Cmd + K focus, Esc reset</span>
+                  <span>${commandStatus || `Hints: ${COMMAND_HINTS.join(" | ")}`}</span>
+                </div>
+              </form>
+
               <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <div className="rounded-2xl border border-slate-200/10 bg-slate-900/50 p-4">
                   <p className="text-xs uppercase tracking-wider text-cloud">Signals tracked</p>
@@ -278,7 +368,8 @@
                 initial=${{ opacity: 0, y: 18 }}
                 animate=${{ opacity: 1, y: 0 }}
                 transition=${{ delay: 0.1 }}
-                className="rounded-3xl border border-slate-200/10 bg-steel/60 p-4 xl:col-span-2"
+                id="route-signals"
+                className=${panelClass("signals", activeRoute, "rounded-3xl border border-slate-200/10 bg-steel/60 p-4 xl:col-span-2")}
               >
                 <div className="mb-3 flex items-center justify-between">
                   <h2 className="font-display text-lg text-white">Signal Momentum</h2>
@@ -342,7 +433,8 @@
                 initial=${{ opacity: 0, y: 18 }}
                 animate=${{ opacity: 1, y: 0 }}
                 transition=${{ delay: 0.18 }}
-                className="rounded-3xl border border-slate-200/10 bg-steel/60 p-4 xl:col-span-2"
+                id="route-heatmap"
+                className=${panelClass("heatmap", activeRoute, "rounded-3xl border border-slate-200/10 bg-steel/60 p-4 xl:col-span-2")}
               >
                 <div className="mb-3 flex items-center justify-between">
                   <h2 className="font-display text-lg text-white">Sector Heatmap</h2>
@@ -368,7 +460,8 @@
                 initial=${{ opacity: 0, y: 18 }}
                 animate=${{ opacity: 1, y: 0 }}
                 transition=${{ delay: 0.22 }}
-                className="rounded-3xl border border-slate-200/10 bg-steel/60 p-4"
+                id="route-alerts"
+                className=${panelClass("alerts", activeRoute, "rounded-3xl border border-slate-200/10 bg-steel/60 p-4")}
               >
                 <h2 className="font-display text-lg text-white">Recent Alerts</h2>
                 <div className="mt-3 space-y-2">
@@ -394,7 +487,8 @@
                 initial=${{ opacity: 0, y: 18 }}
                 animate=${{ opacity: 1, y: 0 }}
                 transition=${{ delay: 0.16 }}
-                className="rounded-3xl border border-slate-200/10 bg-steel/60 p-4 xl:col-span-2"
+                id="route-supply-chain"
+                className=${panelClass("supply-chain", activeRoute, "rounded-3xl border border-slate-200/10 bg-steel/60 p-4 xl:col-span-2")}
               >
                 <div className="mb-3 flex items-center justify-between">
                   <h2 className="font-display text-lg text-white">Supply Chain Graph (Direct + Indirect)</h2>
@@ -482,6 +576,45 @@
                   </tbody>
                 </table>
               </div>
+            </section>
+
+            <section id="route-watchlists" className=${panelClass("watchlists", activeRoute, "mt-4 grid gap-4 rounded-3xl border border-slate-200/10 bg-steel/60 p-4 lg:grid-cols-2")}>
+              <article className="rounded-2xl border border-slate-200/10 bg-slate-900/40 p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <h2 className="font-display text-lg text-white">Watchlists</h2>
+                  <span className="text-xs text-cloud">route target: watchlists</span>
+                </div>
+                <div className="space-y-2 text-sm text-slate-100">
+                  ${watchlists.map(
+                    (watchlist) => html`
+                      <div className="rounded-xl border border-slate-200/10 px-3 py-2">
+                        <p className="font-semibold">${watchlist.name}</p>
+                        <p className="mt-1 text-xs text-cloud">${watchlist.tickers.join(", ")}</p>
+                      </div>
+                    `,
+                  )}
+                </div>
+              </article>
+              <article className="rounded-2xl border border-slate-200/10 bg-slate-900/40 p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <h2 className="font-display text-lg text-white">Command Telemetry</h2>
+                  <span className="text-xs text-cloud">latest 12 executions</span>
+                </div>
+                <div className="space-y-2 text-xs">
+                  ${commandLogs.map(
+                    (log) => html`
+                      <div className="rounded-xl border border-slate-200/10 px-3 py-2">
+                        <div className="flex items-center justify-between text-cloud">
+                          <span className="uppercase tracking-wider">${log.route}</span>
+                          <span>${log.latencyMs}ms</span>
+                        </div>
+                        <p className="mt-1 text-slate-100">${log.input || "<empty>"}</p>
+                        <p className="mt-1 text-cloud">${log.status}${log.errorMessage ? ` | ${log.errorMessage}` : ""}</p>
+                      </div>
+                    `,
+                  )}
+                </div>
+              </article>
             </section>
 
             <section className="mt-4 rounded-3xl border border-slate-200/10 bg-steel/60 p-4">

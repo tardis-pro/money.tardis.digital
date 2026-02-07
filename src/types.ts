@@ -169,6 +169,62 @@ export interface GovernanceChangeRecord {
   createdAt: string;
 }
 
+export type TerminalRoute =
+  | "overview"
+  | "signals"
+  | "heatmap"
+  | "alerts"
+  | "supply-chain"
+  | "watchlists"
+  | "system";
+
+export interface CommandLogRecord {
+  id: string;
+  input: string;
+  normalizedInput: string;
+  route: TerminalRoute;
+  status: "success" | "error";
+  latencyMs: number;
+  errorMessage: string | null;
+  executedAt: string;
+}
+
+export type UserRole = "viewer" | "analyst" | "operator" | "admin";
+
+export interface UserProfile {
+  id: string;
+  displayName: string;
+  role: UserRole;
+  sourceEntitlements: string[];
+  routeEntitlements: TerminalRoute[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AccessAuditRecord {
+  id: string;
+  userId: string;
+  role: UserRole;
+  action: string;
+  resource: string;
+  allowed: boolean;
+  reason: string;
+  createdAt: string;
+}
+
+export interface StreamEventRecord {
+  id: string;
+  type:
+    | "pipeline.run.completed"
+    | "command.executed"
+    | "governance.changed"
+    | "identity.denied"
+    | "identity.updated";
+  publishedAt: string;
+  sequence: number;
+  payload: Record<string, string | number | boolean | null>;
+}
+
 export interface BackfillRunRecord {
   id: string;
   kind: "notable";

@@ -1,7 +1,9 @@
 import path from "node:path";
 import type {
+  AccessAuditRecord,
   AlertRecord,
   AuditRecord,
+  CommandLogRecord,
   DataQualityIssue,
   EventRecord,
   FeedbackRecord,
@@ -11,6 +13,8 @@ import type {
   RawArtifact,
   SignalRecord,
   SourceRegistryItem,
+  StreamEventRecord,
+  UserProfile,
   Watchlist,
 } from "./types.js";
 import { ensureDir, readJsonFile, writeJsonFile } from "./utils.js";
@@ -28,6 +32,11 @@ export interface StateStore {
   governanceChanges: GovernanceChangeRecord[];
   backfillRuns: BackfillRunRecord[];
   watchlists: Watchlist[];
+  commandLogs: CommandLogRecord[];
+  userProfiles: UserProfile[];
+  accessAudits: AccessAuditRecord[];
+  streamEvents: StreamEventRecord[];
+  streamSequence: number;
 }
 
 export interface Store {
@@ -52,7 +61,44 @@ function makeDefaultState(): StateStore {
     governanceChanges: [],
     backfillRuns: [],
     watchlists: [],
+    commandLogs: [],
+    userProfiles: [],
+    accessAudits: [],
+    streamEvents: [],
+    streamSequence: 0,
   };
+}
+
+function defaultUserProfiles(at: string): UserProfile[] {
+  return [
+    {
+      id: "demo-viewer",
+      displayName: "Demo Viewer",
+      role: "viewer",
+      sourceEntitlements: ["businessline_rss"],
+      routeEntitlements: ["overview", "signals", "heatmap", "alerts", "supply-chain", "watchlists", "system"],
+      createdAt: at,
+      updatedAt: at,
+    },
+    {
+      id: "demo-analyst",
+      displayName: "Demo Analyst",
+      role: "analyst",
+      sourceEntitlements: ["pib_press", "rbi_circulars", "nse_announcements", "cppp_tenders", "businessline_rss"],
+      routeEntitlements: ["overview", "signals", "heatmap", "alerts", "supply-chain", "watchlists", "system"],
+      createdAt: at,
+      updatedAt: at,
+    },
+    {
+      id: "demo-admin",
+      displayName: "Demo Admin",
+      role: "admin",
+      sourceEntitlements: ["*"],
+      routeEntitlements: ["overview", "signals", "heatmap", "alerts", "supply-chain", "watchlists", "system"],
+      createdAt: at,
+      updatedAt: at,
+    },
+  ];
 }
 
 export class JsonStore implements Store {
@@ -70,6 +116,7 @@ export class JsonStore implements Store {
     await ensureDir(this.dataDir);
     await ensureDir(this.artifactsDir);
     const existing = await this.read();
+    let dirty = false;
     if (existing.sources.length === 0) {
       const seedSources = await readJsonFile<SourceRegistryItem[]>(
         path.join(process.cwd(), "src/config/sources.json"),
@@ -84,6 +131,13 @@ export class JsonStore implements Store {
           createdAt: new Date().toISOString(),
         },
       ];
+      dirty = true;
+    }
+    if (existing.userProfiles.length === 0) {
+      existing.userProfiles = defaultUserProfiles(new Date().toISOString());
+      dirty = true;
+    }
+    if (dirty) {
       await this.write(existing);
     }
   }
@@ -93,7 +147,29 @@ export class JsonStore implements Store {
   }
 
   async read(): Promise<StateStore> {
-    return readJsonFile<StateStore>(this.stateFile, makeDefaultState());
+    const fallback = makeDefaultState();
+    const loaded = await readJsonFile<Partial<StateStore>>(this.stateFile, fallback);
+    return {
+      ...fallback,
+      ...loaded,
+      sources: loaded.sources ?? fallback.sources,
+      artifacts: loaded.artifacts ?? fallback.artifacts,
+      events: loaded.events ?? fallback.events,
+      signals: loaded.signals ?? fallback.signals,
+      alerts: loaded.alerts ?? fallback.alerts,
+      feedback: loaded.feedback ?? fallback.feedback,
+      audits: loaded.audits ?? fallback.audits,
+      dataQualityIssues: loaded.dataQualityIssues ?? fallback.dataQualityIssues,
+      outcomes: loaded.outcomes ?? fallback.outcomes,
+      governanceChanges: loaded.governanceChanges ?? fallback.governanceChanges,
+      backfillRuns: loaded.backfillRuns ?? fallback.backfillRuns,
+      watchlists: loaded.watchlists ?? fallback.watchlists,
+      commandLogs: loaded.commandLogs ?? fallback.commandLogs,
+      userProfiles: loaded.userProfiles ?? fallback.userProfiles,
+      accessAudits: loaded.accessAudits ?? fallback.accessAudits,
+      streamEvents: loaded.streamEvents ?? fallback.streamEvents,
+      streamSequence: loaded.streamSequence ?? fallback.streamSequence,
+    };
   }
 
   async write(state: StateStore): Promise<void> {
