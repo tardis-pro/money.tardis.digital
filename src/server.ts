@@ -456,6 +456,21 @@ async function buildServer() {
     }
   });
 
+  app.get("/api/system/status", async () => {
+    const state = await store.read();
+    const completedBackfills = state.backfillRuns.filter((item) => item.status === "completed").length;
+    const failedBackfills = state.backfillRuns.filter((item) => item.status === "failed").length;
+    return {
+      sources: state.sources.length,
+      artifacts: state.artifacts.length,
+      signals: state.signals.length,
+      outcomes: state.outcomes.length,
+      completedBackfills,
+      failedBackfills,
+      latestBackfill: state.backfillRuns[0] ?? null,
+    };
+  });
+
   return app;
 }
 

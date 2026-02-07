@@ -58,6 +58,7 @@ Open `http://localhost:3000`.
 - `GET /api/backfill/runs`
 - `GET /api/backfill/runs?status=completed&limit=20`
 - `POST /api/anomalies/correlate`
+- `GET /api/system/status`
 
 ## Backfill and Anomaly Examples
 
