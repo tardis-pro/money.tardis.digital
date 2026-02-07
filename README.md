@@ -59,6 +59,7 @@ Open `http://localhost:3000`.
 ## Notes
 
 - Default storage is file-backed JSON under `data/`; set `STORE_BACKEND=postgres` and `DATABASE_URL` to use Timescale-backed Postgres.
+- Backfill hardening and source strategy are documented in `docs/production-backfill-playbook.md`.
 - When remote fetch fails, ingestion uses controlled fallback payloads so the end-to-end loop remains testable.
 - OCR in this MVP is parser-mode aware (`pdf-ocr`) but intentionally lightweight; production OCR stack guidance is expected to evolve per PRD phasing.
 - UI is served from `public/terminal.html` and uses browser-loaded React/Framer Motion/Tailwind/Recharts modules.
