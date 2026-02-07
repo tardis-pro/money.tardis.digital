@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import historicalSources from "./config/historical-sources.json" with { type: "json" };
 import { PostgresStore } from "./store-postgres.js";
 import { JsonStore } from "./store.js";
 import type { Store } from "./store.js";
@@ -470,6 +471,8 @@ async function buildServer() {
       latestBackfill: state.backfillRuns[0] ?? null,
     };
   });
+
+  app.get("/api/backfill/sources", async () => historicalSources);
 
   return app;
 }

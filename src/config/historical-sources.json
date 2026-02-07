@@ -1,0 +1,42 @@
+[
+  {
+    "id": "rbi-dbie",
+    "name": "RBI Database on Indian Economy",
+    "url": "https://data.rbi.org.in/",
+    "category": "policy-macro",
+    "license": "public",
+    "reliability": "high"
+  },
+  {
+    "id": "rbi-archive",
+    "name": "RBI Historical Archive",
+    "url": "https://www.rbi.org.in/scripts/bs_viewcontent.aspx?Id=3864",
+    "category": "policy-circulars",
+    "license": "public",
+    "reliability": "high"
+  },
+  {
+    "id": "pib-archive",
+    "name": "PIB Archives",
+    "url": "https://www.pib.gov.in/content/100_2_Archives.aspx",
+    "category": "government-policy",
+    "license": "public",
+    "reliability": "high"
+  },
+  {
+    "id": "nse-historical-reports",
+    "name": "NSE Historical Reports",
+    "url": "https://www.nseindia.com/resources/historical-reports-capital-market-daily-monthly-archives",
+    "category": "market-data",
+    "license": "exchange-restricted",
+    "reliability": "high"
+  },
+  {
+    "id": "nse-price-volume-history",
+    "name": "NSE Price and Volume Historical Data",
+    "url": "https://www.nseindia.com/historical/price-and-volume-data-per-security",
+    "category": "market-data",
+    "license": "exchange-restricted",
+    "reliability": "high"
+  }
+]

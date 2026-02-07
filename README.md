@@ -57,6 +57,7 @@ Open `http://localhost:3000`.
 - `POST /api/backfill/notable/preview`
 - `GET /api/backfill/runs`
 - `GET /api/backfill/runs?status=completed&limit=20`
+- `GET /api/backfill/sources`
 - `POST /api/anomalies/correlate`
 - `GET /api/system/status`
 
