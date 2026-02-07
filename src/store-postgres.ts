@@ -52,13 +52,13 @@ export class PostgresStore implements Store {
       "CREATE TABLE IF NOT EXISTS policy_signal.artifacts (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
     );
     await this.pool.query(
-      "CREATE TABLE IF NOT EXISTS policy_signal.events (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
+      "CREATE TABLE IF NOT EXISTS policy_signal.events (id text NOT NULL, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
     );
     await this.pool.query(
-      "CREATE TABLE IF NOT EXISTS policy_signal.signals (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
+      "CREATE TABLE IF NOT EXISTS policy_signal.signals (id text NOT NULL, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
     );
     await this.pool.query(
-      "CREATE TABLE IF NOT EXISTS policy_signal.alerts (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
+      "CREATE TABLE IF NOT EXISTS policy_signal.alerts (id text NOT NULL, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
     );
     await this.pool.query(
       "CREATE TABLE IF NOT EXISTS policy_signal.feedback (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
@@ -70,11 +70,20 @@ export class PostgresStore implements Store {
       "CREATE TABLE IF NOT EXISTS policy_signal.data_quality_issues (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
     );
     await this.pool.query(
-      "CREATE TABLE IF NOT EXISTS policy_signal.outcomes (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
+      "CREATE TABLE IF NOT EXISTS policy_signal.outcomes (id text NOT NULL, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
     );
     await this.pool.query(
       "CREATE TABLE IF NOT EXISTS policy_signal.governance_changes (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
     );
+
+    await this.pool.query("ALTER TABLE policy_signal.signals DROP CONSTRAINT IF EXISTS signals_pkey");
+    await this.pool.query("ALTER TABLE policy_signal.events DROP CONSTRAINT IF EXISTS events_pkey");
+    await this.pool.query("ALTER TABLE policy_signal.alerts DROP CONSTRAINT IF EXISTS alerts_pkey");
+    await this.pool.query("ALTER TABLE policy_signal.outcomes DROP CONSTRAINT IF EXISTS outcomes_pkey");
+    await this.pool.query("ALTER TABLE policy_signal.signals ADD CONSTRAINT signals_pkey PRIMARY KEY (id, ts)");
+    await this.pool.query("ALTER TABLE policy_signal.events ADD CONSTRAINT events_pkey PRIMARY KEY (id, ts)");
+    await this.pool.query("ALTER TABLE policy_signal.alerts ADD CONSTRAINT alerts_pkey PRIMARY KEY (id, ts)");
+    await this.pool.query("ALTER TABLE policy_signal.outcomes ADD CONSTRAINT outcomes_pkey PRIMARY KEY (id, ts)");
 
     await this.pool.query(
       "SELECT create_hypertable('policy_signal.signals', 'ts', if_not_exists => TRUE, migrate_data => TRUE)",

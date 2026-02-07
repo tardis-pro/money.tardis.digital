@@ -6,6 +6,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { JsonStore } from "../src/store.js";
 import { FeedbackService } from "../src/services/feedback.js";
 import { GovernanceService } from "../src/services/governance.js";
+import { AnomalyCorrelationService } from "../src/services/anomaly-correlation.js";
+import { HistoricalBackfillService } from "../src/services/historical-backfill.js";
 import { LearningLoopService } from "../src/services/learning-loop.js";
 import { OutcomeService } from "../src/services/outcomes.js";
 import { SignalPipelineService } from "../src/services/pipeline.js";
@@ -184,6 +186,67 @@ test("supply chain graph includes direct and indirect relationships", async () =
     assert.ok(graph.edges.some((edge) => edge.relation === "direct"));
     assert.ok(graph.edges.some((edge) => edge.relation === "indirect"));
     assert.ok(graph.edges.every((edge) => edge.propagationScore >= 0.25));
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("historical notable-event backfill seeds signals across years", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+
+    const backfill = new HistoricalBackfillService(store);
+    const result = await backfill.run({
+      from: "2022-01-01T00:00:00.000Z",
+      to: "2024-12-31T23:59:59.000Z",
+      tickers: ["SBIN", "IRCTC"],
+    });
+
+    assert.ok(result.loadedSeeds > 0);
+    assert.ok(result.seededSignals > 0);
+    const state = await store.read();
+    assert.ok(state.signals.some((signal) => signal.linkedEntities.some((entity) => entity.ticker === "SBIN")));
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("anomaly correlation links return spikes to nearby events", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+
+    const backfill = new HistoricalBackfillService(store);
+    await backfill.run({
+      from: "2022-01-01T00:00:00.000Z",
+      to: "2025-12-31T23:59:59.000Z",
+      tickers: ["SBIN"],
+    });
+
+    const anomaly = new AnomalyCorrelationService(store);
+    const result = await anomaly.correlate({
+      ticker: "SBIN",
+      windowSize: 6,
+      zThreshold: 2.0,
+      lookbackHours: 240,
+      observations: [
+        { at: "2024-12-05T10:00:00.000Z", close: 100 },
+        { at: "2024-12-06T10:00:00.000Z", close: 99.7 },
+        { at: "2024-12-07T10:00:00.000Z", close: 99.8 },
+        { at: "2024-12-08T10:00:00.000Z", close: 99.6 },
+        { at: "2024-12-09T10:00:00.000Z", close: 99.7 },
+        { at: "2024-12-10T10:00:00.000Z", close: 99.6 },
+        { at: "2024-12-11T10:00:00.000Z", close: 99.5 },
+        { at: "2024-12-12T10:00:00.000Z", close: 106.8 },
+      ],
+    });
+
+    assert.equal(result.ticker, "SBIN");
+    assert.ok(result.anomalies.length >= 1);
+    assert.ok(result.anomalies.some((item) => item.events.length > 0));
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

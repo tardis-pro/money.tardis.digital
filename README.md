@@ -52,6 +52,8 @@ Open `http://localhost:3000`.
 - `POST /api/governance`
 - `POST /api/screenipy/run`
 - `POST /api/model/train`
+- `POST /api/backfill/notable`
+- `POST /api/anomalies/correlate`
 
 ## Notes
 

@@ -6,8 +6,10 @@ import { PostgresStore } from "./store-postgres.js";
 import { JsonStore } from "./store.js";
 import type { Store } from "./store.js";
 import { DataQualityService } from "./services/data-quality.js";
+import { AnomalyCorrelationService } from "./services/anomaly-correlation.js";
 import { FeedbackService } from "./services/feedback.js";
 import { GovernanceService } from "./services/governance.js";
+import { HistoricalBackfillService } from "./services/historical-backfill.js";
 import { LearningLoopService } from "./services/learning-loop.js";
 import { ModelTrainingService } from "./services/model-training.js";
 import { OutcomeService } from "./services/outcomes.js";
@@ -61,6 +63,27 @@ const modelTrainInputSchema = z.object({
   target: z.string().min(1).optional(),
 });
 
+const notableBackfillInputSchema = z.object({
+  from: z.string().min(10).optional(),
+  to: z.string().min(10).optional(),
+  tickers: z.array(z.string().min(1)).optional(),
+  limit: z.coerce.number().int().positive().max(500).optional(),
+});
+
+const anomalyObservationSchema = z.object({
+  at: z.string().min(10),
+  close: z.number().positive(),
+});
+
+const anomalyInputSchema = z.object({
+  ticker: z.string().min(1),
+  observations: z.array(anomalyObservationSchema).optional(),
+  windowSize: z.coerce.number().int().min(5).max(120).optional(),
+  zThreshold: z.number().min(1.5).max(6).optional(),
+  lookbackHours: z.coerce.number().int().min(1).max(720).optional(),
+  maxMatches: z.coerce.number().int().min(1).max(10).optional(),
+});
+
 const supplyChainQuerySchema = z.object({
   watchlistId: z.string().optional(),
 });
@@ -93,6 +116,8 @@ async function buildServer() {
   const modelTraining = new ModelTrainingService();
   const screeniPy = new ScreeniPyService();
   const supplyChain = new SupplyChainGraphService(store);
+  const backfill = new HistoricalBackfillService(store);
+  const anomalyCorrelation = new AnomalyCorrelationService(store);
 
   app.get("/", async () => terminalHtml());
 
@@ -323,6 +348,51 @@ async function buildServer() {
         rollbackReady: true,
       });
       return result;
+    } catch (error) {
+      return reply.code(400).send({ error: String(error) });
+    }
+  });
+
+  app.post("/api/backfill/notable", async (request, reply) => {
+    const parsed = notableBackfillInputSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    try {
+      const backfillInput = {
+        ...(parsed.data.from ? { from: parsed.data.from } : {}),
+        ...(parsed.data.to ? { to: parsed.data.to } : {}),
+        ...(parsed.data.tickers ? { tickers: parsed.data.tickers } : {}),
+        ...(parsed.data.limit ? { limit: parsed.data.limit } : {}),
+      };
+      const result = await backfill.run(backfillInput);
+      await governance.log({
+        category: "pipeline",
+        actor: "historical-backfill",
+        summary: `Backfill loaded ${result.seededSignals} historical signal(s)`,
+        rollbackReady: true,
+      });
+      return result;
+    } catch (error) {
+      return reply.code(400).send({ error: String(error) });
+    }
+  });
+
+  app.post("/api/anomalies/correlate", async (request, reply) => {
+    const parsed = anomalyInputSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    try {
+      const anomalyInput = {
+        ticker: parsed.data.ticker,
+        ...(parsed.data.observations ? { observations: parsed.data.observations } : {}),
+        ...(parsed.data.windowSize ? { windowSize: parsed.data.windowSize } : {}),
+        ...(parsed.data.zThreshold ? { zThreshold: parsed.data.zThreshold } : {}),
+        ...(parsed.data.lookbackHours ? { lookbackHours: parsed.data.lookbackHours } : {}),
+        ...(parsed.data.maxMatches ? { maxMatches: parsed.data.maxMatches } : {}),
+      };
+      return await anomalyCorrelation.correlate(anomalyInput);
     } catch (error) {
       return reply.code(400).send({ error: String(error) });
     }

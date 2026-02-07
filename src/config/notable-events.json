@@ -1,0 +1,74 @@
+[
+  {
+    "id": "ind-budget-2021-capex-push",
+    "title": "Union Budget accelerates public capex outlay",
+    "summary": "Budget announcements emphasized infrastructure and capex expansion, with stronger execution focus across railways and roads.",
+    "publishedAt": "2021-02-01T10:00:00.000Z",
+    "eventType": "policy",
+    "sourceUrl": "https://www.indiabudget.gov.in/",
+    "tickers": ["LT", "IRCTC", "RVNL"]
+  },
+  {
+    "id": "rbi-rate-hike-2022-05",
+    "title": "RBI increases policy repo rate in off-cycle move",
+    "summary": "The central bank raised policy rates to address inflation, creating immediate repricing across banks and rate-sensitive sectors.",
+    "publishedAt": "2022-05-04T08:00:00.000Z",
+    "eventType": "circular",
+    "sourceUrl": "https://www.rbi.org.in/",
+    "tickers": ["SBIN", "HDFCBANK"]
+  },
+  {
+    "id": "defense-procurement-2022-indigenisation",
+    "title": "Defense procurement list expands domestic sourcing",
+    "summary": "Additional defense items were prioritized for domestic procurement, supporting long-duration order visibility for defense electronics and aerospace.",
+    "publishedAt": "2022-10-10T09:30:00.000Z",
+    "eventType": "policy",
+    "sourceUrl": "https://www.pib.gov.in/",
+    "tickers": ["HAL", "BEL"]
+  },
+  {
+    "id": "rail-capex-allocation-2023",
+    "title": "Record railways capex allocation announced",
+    "summary": "The budget raised railways capital allocation materially, increasing expectations of order flow and execution activity across rail infrastructure.",
+    "publishedAt": "2023-02-01T10:00:00.000Z",
+    "eventType": "capex",
+    "sourceUrl": "https://www.indiabudget.gov.in/",
+    "tickers": ["IRCTC", "RVNL", "IRFC"]
+  },
+  {
+    "id": "power-demand-summer-2023",
+    "title": "Power demand peaks with summer load pressure",
+    "summary": "Peak demand episodes and thermal dispatch intensity drove renewed focus on generation availability and grid financing.",
+    "publishedAt": "2023-06-15T11:00:00.000Z",
+    "eventType": "news",
+    "sourceUrl": "https://powermin.gov.in/",
+    "tickers": ["NTPC", "PFC"]
+  },
+  {
+    "id": "interim-budget-2024-capex",
+    "title": "Interim budget sustains infrastructure capital push",
+    "summary": "The interim budget retained a strong capital expenditure trajectory and policy continuity signal for infra and logistics names.",
+    "publishedAt": "2024-02-01T10:00:00.000Z",
+    "eventType": "policy",
+    "sourceUrl": "https://www.indiabudget.gov.in/",
+    "tickers": ["LT", "RVNL", "IRCTC"]
+  },
+  {
+    "id": "rbi-rate-hold-2024-12",
+    "title": "RBI maintains rates with inflation vigilance",
+    "summary": "Policy stance remained cautious while liquidity conditions were actively monitored, affecting banking and credit-sensitive sectors.",
+    "publishedAt": "2024-12-06T07:30:00.000Z",
+    "eventType": "circular",
+    "sourceUrl": "https://www.rbi.org.in/",
+    "tickers": ["SBIN", "HDFCBANK"]
+  },
+  {
+    "id": "defense-orders-2025-q1",
+    "title": "Defense ordering pipeline shows sustained momentum",
+    "summary": "Execution visibility improved as procurement cadence and platform-level demand commentary remained constructive.",
+    "publishedAt": "2025-03-20T09:00:00.000Z",
+    "eventType": "tender",
+    "sourceUrl": "https://www.mod.gov.in/",
+    "tickers": ["HAL", "BEL"]
+  }
+]
