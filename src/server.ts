@@ -30,6 +30,7 @@ import { EntityLinkDiagnosticsService } from "./services/entity-link-diagnostics
 import { ChartingService } from "./services/charting.js";
 import { ScreeningService } from "./services/screening.js";
 import { AlertOrchestratorService } from "./services/alert-orchestrator.js";
+import { PortfolioService } from "./services/portfolio.js";
 
 async function terminalHtml(): Promise<string> {
   return readFile(path.join(process.cwd(), "public/terminal.html"), "utf8");
@@ -178,6 +179,25 @@ const alertRouteQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(300).optional(),
 });
 
+const portfolioCreateSchema = z.object({
+  name: z.string().min(2).max(80),
+  createdBy: z.string().min(1).max(64),
+  positions: z.array(
+    z.object({
+      ticker: z.string().min(1).max(24),
+      quantity: z.number().positive(),
+      avgPrice: z.number().positive(),
+      marketPrice: z.number().positive(),
+    }),
+  ).min(1),
+});
+
+const portfolioScenarioSchema = z.object({
+  name: z.string().min(2).max(80),
+  shockPct: z.number().min(-1).max(1),
+  notes: z.string().min(1).max(400),
+});
+
 const backfillRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   status: z.enum(["running", "completed", "failed"]).optional(),
@@ -222,6 +242,7 @@ async function buildServer() {
   const charting = new ChartingService(store);
   const screening = new ScreeningService(store);
   const alertOrchestrator = new AlertOrchestratorService(store);
+  const portfolio = new PortfolioService(store);
 
   function requestUserId(request: { headers: Record<string, unknown> }): string {
     const header = request.headers["x-user-id"];
@@ -532,6 +553,83 @@ async function buildServer() {
       return access.response;
     }
     return alertOrchestrator.quality();
+  });
+
+  app.post("/api/portfolios", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "watchlists");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = portfolioCreateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return portfolio.createPortfolio(parsed.data);
+  });
+
+  app.get("/api/portfolios", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "watchlists");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return portfolio.listPortfolios();
+  });
+
+  app.get("/api/portfolios/:portfolioId/exposure", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "watchlists");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const { portfolioId } = request.params as { portfolioId: string };
+    try {
+      return await portfolio.exposure(portfolioId);
+    } catch (error) {
+      return reply.code(404).send({ error: String(error) });
+    }
+  });
+
+  app.get("/api/portfolios/:portfolioId/attribution", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "watchlists");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const { portfolioId } = request.params as { portfolioId: string };
+    try {
+      return await portfolio.attribution(portfolioId);
+    } catch (error) {
+      return reply.code(404).send({ error: String(error) });
+    }
+  });
+
+  app.post("/api/portfolios/:portfolioId/scenarios", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "watchlists");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = portfolioScenarioSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    const { portfolioId } = request.params as { portfolioId: string };
+    try {
+      return await portfolio.saveScenario({
+        portfolioId,
+        name: parsed.data.name,
+        shockPct: parsed.data.shockPct,
+        notes: parsed.data.notes,
+      });
+    } catch (error) {
+      return reply.code(404).send({ error: String(error) });
+    }
+  });
+
+  app.get("/api/portfolios/:portfolioId/scenarios", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "watchlists");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const { portfolioId } = request.params as { portfolioId: string };
+    return portfolio.listScenarios(portfolioId);
   });
 
   app.get("/api/watchlists", async (request, reply) => {

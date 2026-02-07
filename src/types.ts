@@ -453,3 +453,47 @@ export interface AlertQualitySnapshot {
   duplicateRate: number;
   avgDispatchPerAlert: number;
 }
+
+export interface PortfolioPosition {
+  ticker: string;
+  quantity: number;
+  avgPrice: number;
+  marketPrice: number;
+}
+
+export interface PortfolioRecord {
+  id: string;
+  name: string;
+  positions: PortfolioPosition[];
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScenarioBookmark {
+  id: string;
+  portfolioId: string;
+  name: string;
+  shockPct: number;
+  notes: string;
+  createdAt: string;
+}
+
+export interface PortfolioExposureSummary {
+  portfolioId: string;
+  totalMarketValue: number;
+  sectorExposure: Array<{
+    sector: string;
+    marketValue: number;
+    weight: number;
+  }>;
+  policySensitivityScore: number;
+}
+
+export interface PortfolioAttributionRow {
+  portfolioId: string;
+  ticker: string;
+  pnl: number;
+  latestSignalScore: number;
+  eventTitle: string | null;
+}

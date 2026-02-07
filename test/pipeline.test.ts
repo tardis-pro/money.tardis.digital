@@ -25,6 +25,7 @@ import { EntityLinkDiagnosticsService } from "../src/services/entity-link-diagno
 import { ChartingService } from "../src/services/charting.js";
 import { ScreeningService } from "../src/services/screening.js";
 import { AlertOrchestratorService } from "../src/services/alert-orchestrator.js";
+import { PortfolioService } from "../src/services/portfolio.js";
 
 test("pipeline run creates explainable signals with audit records", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
@@ -750,6 +751,47 @@ test("alert orchestrator supports rule routing and quality metrics", async () =>
     const quality = await orchestrator.quality();
     assert.ok(quality.totalAlerts >= 1);
     assert.ok(quality.dispatches >= 1);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("portfolio service supports exposure attribution and scenario bookmarks", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+    const pipeline = new SignalPipelineService(store);
+    await pipeline.run();
+
+    const portfolioService = new PortfolioService(store);
+    const portfolio = await portfolioService.createPortfolio({
+      name: "Core Infra Book",
+      createdBy: "demo-analyst",
+      positions: [
+        { ticker: "SBIN", quantity: 100, avgPrice: 720, marketPrice: 736 },
+        { ticker: "LT", quantity: 40, avgPrice: 3200, marketPrice: 3290 },
+      ],
+    });
+    assert.ok(portfolio.id.length > 0);
+
+    const exposure = await portfolioService.exposure(portfolio.id);
+    assert.ok(exposure.totalMarketValue > 0);
+    assert.ok(exposure.sectorExposure.length > 0);
+
+    const attribution = await portfolioService.attribution(portfolio.id);
+    assert.equal(attribution.length, 2);
+
+    const scenario = await portfolioService.saveScenario({
+      portfolioId: portfolio.id,
+      name: "Rate Shock -100bps",
+      shockPct: -0.04,
+      notes: "Stress policy-sensitive holdings",
+    });
+    assert.ok(scenario.id.length > 0);
+
+    const scenarios = await portfolioService.listScenarios(portfolio.id);
+    assert.equal(scenarios.length, 1);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

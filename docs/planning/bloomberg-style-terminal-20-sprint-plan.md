@@ -64,6 +64,11 @@ Scope: Build a Bloomberg-like policy and market intelligence terminal for India-
   - Alert routing execution API added for per-rule multi-channel dispatching.
   - Alert quality metrics API added for duplicate/suppression/escalation visibility.
   - Remaining work for full Sprint 11 exits: user/watchlist-targeted routing matrix and richer anomaly-policy composites.
+- Sprint 12 baseline implementation:
+  - Portfolio workspace APIs added for position book creation and retrieval.
+  - Exposure and attribution APIs added for sector weights, market value, and event-linked PnL rows.
+  - Scenario bookmark APIs added for recurring desk stress templates.
+  - Remaining work for full Sprint 12 exits: near-real-time refresh transport and external reconciliation adapters.
 
 ## Delivery Structure
 

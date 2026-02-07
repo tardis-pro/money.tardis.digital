@@ -29,6 +29,7 @@ Open `http://localhost:3000`.
 - Charting workspace APIs for saved templates and event annotations by ticker.
 - Screening/discovery APIs for saved screens, reruns, change feed, and diagnostics.
 - Alert orchestration APIs for composite rule config, routing, and quality metrics.
+- Portfolio workspace APIs for positions, exposure, attribution, and scenario bookmarks.
 - React + Framer Motion + Tailwind terminal UI with live Recharts dashboards.
 - Supply-chain graph view (direct + indirect links) with node-level production/demand/import/export/surplus metrics.
 - Alert generation with thresholding, dedupe behavior, and cooldown suppression.
@@ -62,6 +63,12 @@ Open `http://localhost:3000`.
 - `GET /api/alert-rules`
 - `POST /api/alerts/route?limit=100`
 - `GET /api/alerts/quality`
+- `POST /api/portfolios`
+- `GET /api/portfolios`
+- `GET /api/portfolios/:portfolioId/exposure`
+- `GET /api/portfolios/:portfolioId/attribution`
+- `POST /api/portfolios/:portfolioId/scenarios`
+- `GET /api/portfolios/:portfolioId/scenarios`
 - `GET /api/supply-chain-graph`
 - `GET /api/alerts`
 - `POST /api/feedback`

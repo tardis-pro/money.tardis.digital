@@ -14,7 +14,9 @@ import type {
   FeedbackRecord,
   GovernanceChangeRecord,
   OutcomeRecord,
+  PortfolioRecord,
   RawArtifact,
+  ScenarioBookmark,
   ScreenDefinition,
   ScreenRun,
   SignalRecord,
@@ -49,6 +51,8 @@ const TABLES = [
   "discovery_changes",
   "alert_rules",
   "alert_dispatches",
+  "portfolios",
+  "scenario_bookmarks",
 ] as const;
 
 function rowPayload<T>(rows: Array<{ payload: T }>): T[] {
@@ -134,6 +138,12 @@ export class PostgresStore implements Store {
     await this.pool.query(
       "CREATE TABLE IF NOT EXISTS policy_signal.alert_dispatches (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
     );
+    await this.pool.query(
+      "CREATE TABLE IF NOT EXISTS policy_signal.portfolios (id text PRIMARY KEY, payload jsonb NOT NULL)",
+    );
+    await this.pool.query(
+      "CREATE TABLE IF NOT EXISTS policy_signal.scenario_bookmarks (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
+    );
 
     await this.pool.query("ALTER TABLE policy_signal.signals DROP CONSTRAINT IF EXISTS signals_pkey");
     await this.pool.query("ALTER TABLE policy_signal.events DROP CONSTRAINT IF EXISTS events_pkey");
@@ -196,6 +206,8 @@ export class PostgresStore implements Store {
       discoveryChanges,
       alertRules,
       alertDispatches,
+      portfolios,
+      scenarioBookmarks,
     ] =
       await Promise.all([
         this.pool.query<{ payload: SourceRegistryItem }>("SELECT payload FROM policy_signal.sources"),
@@ -225,6 +237,8 @@ export class PostgresStore implements Store {
         this.pool.query<{ payload: DiscoveryChangeRecord }>("SELECT payload FROM policy_signal.discovery_changes ORDER BY ts DESC"),
         this.pool.query<{ payload: AlertRuleConfig }>("SELECT payload FROM policy_signal.alert_rules ORDER BY id ASC"),
         this.pool.query<{ payload: AlertDispatchRecord }>("SELECT payload FROM policy_signal.alert_dispatches ORDER BY ts DESC"),
+        this.pool.query<{ payload: PortfolioRecord }>("SELECT payload FROM policy_signal.portfolios ORDER BY id ASC"),
+        this.pool.query<{ payload: ScenarioBookmark }>("SELECT payload FROM policy_signal.scenario_bookmarks ORDER BY ts DESC"),
       ]);
 
     return {
@@ -251,6 +265,8 @@ export class PostgresStore implements Store {
       discoveryChanges: rowPayload(discoveryChanges.rows),
       alertRules: rowPayload(alertRules.rows),
       alertDispatches: rowPayload(alertDispatches.rows),
+      portfolios: rowPayload(portfolios.rows),
+      scenarioBookmarks: rowPayload(scenarioBookmarks.rows),
     };
   }
 
@@ -408,6 +424,19 @@ export class PostgresStore implements Store {
           dispatch.id,
           dispatch.dispatchedAt,
           dispatch,
+        ]);
+      }
+      for (const portfolio of state.portfolios) {
+        await client.query("INSERT INTO policy_signal.portfolios (id, payload) VALUES ($1, $2)", [
+          portfolio.id,
+          portfolio,
+        ]);
+      }
+      for (const bookmark of state.scenarioBookmarks) {
+        await client.query("INSERT INTO policy_signal.scenario_bookmarks (id, ts, payload) VALUES ($1, $2, $3)", [
+          bookmark.id,
+          bookmark.createdAt,
+          bookmark,
         ]);
       }
       await client.query("COMMIT");

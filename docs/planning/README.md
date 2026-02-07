@@ -36,3 +36,4 @@ This folder contains the Bloomberg-style terminal planning set requested for a 2
 - Sprint 9 baseline is actively implemented in code (chart template persistence and ticker event annotations APIs).
 - Sprint 10 baseline is actively implemented in code (screening/discovery APIs with run and diagnostics primitives).
 - Sprint 11 baseline is actively implemented in code (alert rule orchestration, routing, and quality APIs).
+- Sprint 12 baseline is actively implemented in code (portfolio workspace, exposure/attribution, scenario bookmark APIs).

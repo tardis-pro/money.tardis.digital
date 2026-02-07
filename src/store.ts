@@ -14,10 +14,12 @@ import type {
   GovernanceChangeRecord,
   BackfillRunRecord,
   OutcomeRecord,
+  PortfolioRecord,
   RawArtifact,
   ScreenDefinition,
   ScreenRun,
   SignalRecord,
+  ScenarioBookmark,
   SourceRegistryItem,
   StreamEventRecord,
   UserProfile,
@@ -49,6 +51,8 @@ export interface StateStore {
   discoveryChanges: DiscoveryChangeRecord[];
   alertRules: AlertRuleConfig[];
   alertDispatches: AlertDispatchRecord[];
+  portfolios: PortfolioRecord[];
+  scenarioBookmarks: ScenarioBookmark[];
 }
 
 export interface Store {
@@ -84,6 +88,8 @@ function makeDefaultState(): StateStore {
     discoveryChanges: [],
     alertRules: [],
     alertDispatches: [],
+    portfolios: [],
+    scenarioBookmarks: [],
   };
 }
 
@@ -193,6 +199,8 @@ export class JsonStore implements Store {
       discoveryChanges: loaded.discoveryChanges ?? fallback.discoveryChanges,
       alertRules: loaded.alertRules ?? fallback.alertRules,
       alertDispatches: loaded.alertDispatches ?? fallback.alertDispatches,
+      portfolios: loaded.portfolios ?? fallback.portfolios,
+      scenarioBookmarks: loaded.scenarioBookmarks ?? fallback.scenarioBookmarks,
     };
   }
 
