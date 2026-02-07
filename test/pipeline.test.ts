@@ -31,6 +31,7 @@ import { AnomalyV3Service } from "../src/services/anomaly-v3.js";
 import { ResearchService } from "../src/services/research.js";
 import { GovernanceHardeningService } from "../src/services/governance-hardening.js";
 import { SreService } from "../src/services/sre.js";
+import { PersonalizationService } from "../src/services/personalization.js";
 
 test("pipeline run creates explainable signals with audit records", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
@@ -983,6 +984,41 @@ test("sre service tracks slo budgets chaos drills and reliability status", async
     assert.equal(status.sloCount, 1);
     assert.equal(status.chaosDrills, 1);
     assert.equal(status.chaosPassRate, 1);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("personalization service stores macros presets onboarding and adoption metrics", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+    const service = new PersonalizationService(store);
+
+    await service.saveMacro({
+      userId: "demo-analyst",
+      name: "morning-open",
+      commands: ["signals", "heatmap", "alerts"],
+      reversible: true,
+    });
+    await service.savePreset({
+      role: "analyst",
+      name: "Desk Default",
+      routes: ["overview", "signals", "watchlists"],
+    });
+    await service.recordOnboarding({
+      userId: "demo-analyst",
+      completedSteps: 8,
+      totalSteps: 10,
+      sessionMinutes: 24,
+    });
+
+    const adoption = await service.adoption();
+    assert.equal(adoption.macros, 1);
+    assert.equal(adoption.presets, 1);
+    assert.equal(adoption.onboardingUsers, 1);
+    assert.equal(adoption.avgCompletionRate, 0.8);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

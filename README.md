@@ -35,6 +35,7 @@ Open `http://localhost:3000`.
 - Research workflow APIs for notebooks, query templates, comments, and evidence packs.
 - Governance hardening APIs for release-gate evidence, runbooks, and policy checks.
 - SRE APIs for SLO budgets, chaos drill records, and reliability status summaries.
+- Workspace personalization APIs for macros, presets, onboarding, and adoption metrics.
 - React + Framer Motion + Tailwind terminal UI with live Recharts dashboards.
 - Supply-chain graph view (direct + indirect links) with node-level production/demand/import/export/surplus metrics.
 - Alert generation with thresholding, dedupe behavior, and cooldown suppression.
@@ -96,6 +97,12 @@ Open `http://localhost:3000`.
 - `POST /api/sre/chaos-drills`
 - `GET /api/sre/chaos-drills`
 - `GET /api/sre/status`
+- `POST /api/workspace/macros`
+- `GET /api/workspace/macros`
+- `POST /api/workspace/presets`
+- `GET /api/workspace/presets`
+- `POST /api/workspace/onboarding`
+- `GET /api/workspace/adoption`
 - `GET /api/supply-chain-graph`
 - `GET /api/alerts`
 - `POST /api/feedback`

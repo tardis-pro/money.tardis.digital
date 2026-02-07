@@ -36,6 +36,7 @@ import { AnomalyV3Service } from "./services/anomaly-v3.js";
 import { ResearchService } from "./services/research.js";
 import { GovernanceHardeningService } from "./services/governance-hardening.js";
 import { SreService } from "./services/sre.js";
+import { PersonalizationService } from "./services/personalization.js";
 
 async function terminalHtml(): Promise<string> {
   return readFile(path.join(process.cwd(), "public/terminal.html"), "utf8");
@@ -274,6 +275,26 @@ const chaosSchema = z.object({
   owner: z.string().min(1).max(64),
 });
 
+const macroSchema = z.object({
+  userId: z.string().min(1).max(64),
+  name: z.string().min(2).max(80),
+  commands: z.array(z.string().min(1).max(120)).min(1).max(20),
+  reversible: z.boolean(),
+});
+
+const presetSchema = z.object({
+  role: z.enum(["viewer", "analyst", "operator", "admin"]),
+  name: z.string().min(2).max(80),
+  routes: z.array(z.string().min(1).max(40)).min(1).max(20),
+});
+
+const onboardingSchema = z.object({
+  userId: z.string().min(1).max(64),
+  completedSteps: z.number().int().min(0).max(50),
+  totalSteps: z.number().int().min(1).max(50),
+  sessionMinutes: z.number().int().min(0).max(10_000),
+});
+
 const backfillRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   status: z.enum(["running", "completed", "failed"]).optional(),
@@ -324,6 +345,7 @@ async function buildServer() {
   const research = new ResearchService(store);
   const governanceHardening = new GovernanceHardeningService(store);
   const sre = new SreService(store);
+  const personalization = new PersonalizationService(store);
 
   function requestUserId(request: { headers: Record<string, unknown> }): string {
     const header = request.headers["x-user-id"];
@@ -953,6 +975,66 @@ async function buildServer() {
       return access.response;
     }
     return sre.status();
+  });
+
+  app.post("/api/workspace/macros", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = macroSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return personalization.saveMacro(parsed.data);
+  });
+
+  app.get("/api/workspace/macros", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return personalization.list("macro", 100);
+  });
+
+  app.post("/api/workspace/presets", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = presetSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return personalization.savePreset(parsed.data);
+  });
+
+  app.get("/api/workspace/presets", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return personalization.list("workspace-preset", 100);
+  });
+
+  app.post("/api/workspace/onboarding", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = onboardingSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return personalization.recordOnboarding(parsed.data);
+  });
+
+  app.get("/api/workspace/adoption", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return personalization.adoption();
   });
 
   app.get("/api/watchlists", async (request, reply) => {

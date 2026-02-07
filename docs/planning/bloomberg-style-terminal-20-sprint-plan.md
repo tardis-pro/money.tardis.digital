@@ -94,6 +94,11 @@ Scope: Build a Bloomberg-like policy and market intelligence terminal for India-
   - Chaos drill APIs added with pass/fail and MTTR capture.
   - SRE status API added for reliability budget and drill-compliance summary.
   - Remaining work for full Sprint 17 exits: automated failover execution and cost-control telemetry.
+- Sprint 18 baseline implementation:
+  - Workspace macro APIs added for safe, reversible command automation.
+  - Role-based workspace preset APIs added for one-action desk setup.
+  - Onboarding/adoption APIs added for completion and workflow optimization metrics.
+  - Remaining work for full Sprint 18 exits: in-terminal guided UX and behavior-driven recommendation loop.
 
 ## Delivery Structure
 
