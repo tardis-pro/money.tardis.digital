@@ -24,6 +24,7 @@ Open `http://localhost:3000`.
 - Stream event bus baseline with durable event sequence, replay API, and stream health metrics.
 - Backfill run-control dashboard and reconciliation APIs for duplicate visibility and reliability tracking.
 - Source drift detection API with freshness/fallback/confidence signals for reliability operations.
+- Market snapshot API with adjustment-aware price and breadth metrics.
 - React + Framer Motion + Tailwind terminal UI with live Recharts dashboards.
 - Supply-chain graph view (direct + indirect links) with node-level production/demand/import/export/surplus metrics.
 - Alert generation with thresholding, dedupe behavior, and cooldown suppression.
@@ -43,6 +44,7 @@ Open `http://localhost:3000`.
 - `POST /api/ingest/run?sourceId=<id>`
 - `GET /api/signals?limit=20`
 - `GET /api/heatmap`
+- `GET /api/market/snapshots?limit=50`
 - `GET /api/supply-chain-graph`
 - `GET /api/alerts`
 - `POST /api/feedback`

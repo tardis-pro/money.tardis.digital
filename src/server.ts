@@ -25,6 +25,7 @@ import { IdentityService } from "./services/identity.js";
 import { StreamBusService } from "./services/stream-bus.js";
 import { BackfillControlService } from "./services/backfill-control.js";
 import { SourceDriftService } from "./services/source-drift.js";
+import { MarketSnapshotService } from "./services/market-snapshot.js";
 
 async function terminalHtml(): Promise<string> {
   return readFile(path.join(process.cwd(), "public/terminal.html"), "utf8");
@@ -120,6 +121,10 @@ const backfillReconcileQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
 });
 
+const marketSnapshotQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).optional(),
+});
+
 const backfillRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   status: z.enum(["running", "completed", "failed"]).optional(),
@@ -159,6 +164,7 @@ async function buildServer() {
   const streamBus = new StreamBusService(store);
   const backfillControl = new BackfillControlService(store);
   const sourceDrift = new SourceDriftService(store);
+  const marketSnapshot = new MarketSnapshotService(store);
 
   function requestUserId(request: { headers: Record<string, unknown> }): string {
     const header = request.headers["x-user-id"];
@@ -315,6 +321,18 @@ async function buildServer() {
       return reply.code(400).send({ error: parsed.error.issues });
     }
     return supplyChain.buildGraph(parsed.data.watchlistId);
+  });
+
+  app.get("/api/market/snapshots", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = marketSnapshotQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return marketSnapshot.snapshots(parsed.data.limit ?? 50);
   });
 
   app.get("/api/watchlists", async (request, reply) => {

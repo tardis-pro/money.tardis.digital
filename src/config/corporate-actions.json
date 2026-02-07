@@ -1,0 +1,18 @@
+[
+  {
+    "ticker": "SBIN",
+    "adjustmentFactor": 0.98
+  },
+  {
+    "ticker": "LT",
+    "adjustmentFactor": 0.97
+  },
+  {
+    "ticker": "NTPC",
+    "adjustmentFactor": 0.99
+  },
+  {
+    "ticker": "IRCTC",
+    "adjustmentFactor": 0.96
+  }
+]

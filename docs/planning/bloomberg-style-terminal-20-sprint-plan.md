@@ -42,6 +42,10 @@ Scope: Build a Bloomberg-like policy and market intelligence terminal for India-
   - Source drift detection API added with freshness, low-confidence, and fallback-payload scoring.
   - Drift output ranked by risk score to support source reliability review loops.
   - Remaining work for full Sprint 6 exits: expanded RBI/PIB archive connectors and automated license-policy enforcement.
+- Sprint 7 baseline implementation:
+  - Market snapshot API added with adjustment-aware prices and breadth-driven ranking.
+  - Corporate-action adjustment factors introduced for key instruments in snapshot output.
+  - Remaining work for full Sprint 7 exits: real exchange-integrated streaming prices and deeper integrity checks.
 
 ## Delivery Structure
 

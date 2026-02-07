@@ -335,3 +335,14 @@ export interface SourceDriftEntry {
   driftScore: number;
   reasons: string[];
 }
+
+export interface MarketSnapshotEntry {
+  ticker: string;
+  sector: string;
+  latestPrice: number;
+  adjustedPrice: number;
+  adjustmentFactor: number;
+  dayChangePct: number;
+  breadthSignalScore: number;
+  updatedAt: string;
+}

@@ -20,6 +20,7 @@ import { StreamBusService } from "../src/services/stream-bus.js";
 import { BackfillControlService } from "../src/services/backfill-control.js";
 import { makeId, nowIso } from "../src/utils.js";
 import { SourceDriftService } from "../src/services/source-drift.js";
+import { MarketSnapshotService } from "../src/services/market-snapshot.js";
 
 test("pipeline run creates explainable signals with audit records", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
@@ -580,6 +581,24 @@ test("source drift service ranks stale and fallback-prone feeds", async () => {
     assert.equal(top.sourceId, "businessline_rss");
     assert.ok(top.driftScore > 0);
     assert.ok(top.reasons.length > 0);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("market snapshot service returns adjustment-aware breadth snapshots", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+    const pipeline = new SignalPipelineService(store);
+    await pipeline.run();
+
+    const service = new MarketSnapshotService(store);
+    const rows = await service.snapshots(20);
+    assert.ok(rows.length > 0);
+    assert.ok(rows.some((row) => row.adjustmentFactor !== 1));
+    assert.ok(rows.every((row) => Number.isFinite(row.adjustedPrice)));
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
