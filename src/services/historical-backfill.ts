@@ -53,6 +53,21 @@ export interface HistoricalBackfillResult {
   skippedDuplicates: number;
 }
 
+export interface HistoricalBackfillPreview {
+  totalMatchingSeeds: number;
+  offset: number;
+  batchSize: number;
+  hasMore: boolean;
+  nextOffset: number;
+  items: Array<{
+    id: string;
+    title: string;
+    publishedAt: string;
+    tickers: string[];
+    eventType: EventRecord["eventType"];
+  }>;
+}
+
 const DEFAULT_SOURCE_ID = "notable_events_catalog";
 
 function parseIso(value: string): Date {
@@ -146,7 +161,17 @@ export class HistoricalBackfillService {
     };
   }
 
-  async run(input: HistoricalBackfillInput): Promise<HistoricalBackfillResult> {
+  private selectSeeds(input: HistoricalBackfillInput): {
+    from: Date;
+    to: Date;
+    tickerFilter: Set<string>;
+    offset: number;
+    batchSize: number;
+    matchingSeeds: NotableEventSeed[];
+    selectedSeeds: NotableEventSeed[];
+    hasMore: boolean;
+    nextOffset: number;
+  } {
     const from = input.from ? parseIso(input.from) : new Date("2000-01-01T00:00:00.000Z");
     const to = input.to ? parseIso(input.to) : new Date("2100-01-01T00:00:00.000Z");
     if (to < from) {
@@ -154,6 +179,56 @@ export class HistoricalBackfillService {
     }
     const tickerFilter = new Set(normalizedTickers(input.tickers));
     const offset = Math.max(0, input.offset ?? 0);
+    const matchingSeeds = this.seeds
+      .filter((seed) => {
+        const eventAt = parseIso(seed.publishedAt);
+        if (eventAt < from || eventAt > to) {
+          return false;
+        }
+        if (tickerFilter.size === 0) {
+          return true;
+        }
+        return seed.tickers.some((ticker) => tickerFilter.has(ticker));
+      })
+      .sort((a, b) => a.publishedAt.localeCompare(b.publishedAt));
+    const batchSize = Math.max(1, input.batchSize ?? input.limit ?? matchingSeeds.length);
+    const selectedSeeds = matchingSeeds.slice(offset, offset + batchSize);
+    const nextOffset = offset + selectedSeeds.length;
+    const hasMore = nextOffset < matchingSeeds.length;
+    return {
+      from,
+      to,
+      tickerFilter,
+      offset,
+      batchSize,
+      matchingSeeds,
+      selectedSeeds,
+      hasMore,
+      nextOffset,
+    };
+  }
+
+  preview(input: HistoricalBackfillInput): HistoricalBackfillPreview {
+    const selected = this.selectSeeds(input);
+    return {
+      totalMatchingSeeds: selected.matchingSeeds.length,
+      offset: selected.offset,
+      batchSize: selected.batchSize,
+      hasMore: selected.hasMore,
+      nextOffset: selected.nextOffset,
+      items: selected.selectedSeeds.map((seed) => ({
+        id: seed.id,
+        title: seed.title,
+        publishedAt: seed.publishedAt,
+        tickers: seed.tickers,
+        eventType: seed.eventType,
+      })),
+    };
+  }
+
+  async run(input: HistoricalBackfillInput): Promise<HistoricalBackfillResult> {
+    const selected = this.selectSeeds(input);
+    const { from, to, tickerFilter, offset, selectedSeeds, batchSize, hasMore, nextOffset } = selected;
     const runId = makeId("backfill");
     const startedAt = nowIso();
 
@@ -167,7 +242,7 @@ export class HistoricalBackfillService {
         tickers: [...tickerFilter],
         limit: input.limit ?? this.seeds.length,
         offset,
-        batchSize: input.batchSize ?? input.limit ?? this.seeds.length,
+        batchSize,
         nextOffset: offset,
         hasMore: false,
         loadedSeeds: 0,
@@ -180,22 +255,6 @@ export class HistoricalBackfillService {
       };
       state.backfillRuns.push(run);
     });
-
-    const matchingSeeds = this.seeds
-      .filter((seed) => {
-        const eventAt = parseIso(seed.publishedAt);
-        if (eventAt < from || eventAt > to) {
-          return false;
-        }
-        if (tickerFilter.size === 0) {
-          return true;
-        }
-        return seed.tickers.some((ticker) => tickerFilter.has(ticker));
-      });
-    const batchSize = Math.max(1, input.batchSize ?? input.limit ?? matchingSeeds.length);
-    const selectedSeeds = matchingSeeds.slice(offset, offset + batchSize);
-    const nextOffset = offset + selectedSeeds.length;
-    const hasMore = nextOffset < matchingSeeds.length;
 
     const bodyWrites: Array<{ bodyPath: string; body: string }> = [];
 

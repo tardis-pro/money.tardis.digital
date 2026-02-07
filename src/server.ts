@@ -387,6 +387,26 @@ async function buildServer() {
     }
   });
 
+  app.post("/api/backfill/notable/preview", async (request, reply) => {
+    const parsed = notableBackfillInputSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    try {
+      const input = {
+        ...(parsed.data.from ? { from: parsed.data.from } : {}),
+        ...(parsed.data.to ? { to: parsed.data.to } : {}),
+        ...(parsed.data.tickers ? { tickers: parsed.data.tickers } : {}),
+        ...(parsed.data.limit ? { limit: parsed.data.limit } : {}),
+        ...(parsed.data.offset !== undefined ? { offset: parsed.data.offset } : {}),
+        ...(parsed.data.batchSize !== undefined ? { batchSize: parsed.data.batchSize } : {}),
+      };
+      return backfill.preview(input);
+    } catch (error) {
+      return reply.code(400).send({ error: String(error) });
+    }
+  });
+
   app.get("/api/backfill/runs", async (request, reply) => {
     const parsed = backfillRunsQuerySchema.safeParse(request.query);
     if (!parsed.success) {

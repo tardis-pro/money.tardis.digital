@@ -198,6 +198,15 @@ test("historical notable-event backfill seeds signals across years", async () =>
     await store.init();
 
     const backfill = new HistoricalBackfillService(store);
+    const preview = backfill.preview({
+      from: "2022-01-01T00:00:00.000Z",
+      to: "2024-12-31T23:59:59.000Z",
+      tickers: ["SBIN", "IRCTC"],
+      batchSize: 1,
+    });
+    assert.equal(preview.batchSize, 1);
+    assert.ok(preview.totalMatchingSeeds >= 1);
+
     const result = await backfill.run({
       from: "2022-01-01T00:00:00.000Z",
       to: "2024-12-31T23:59:59.000Z",
