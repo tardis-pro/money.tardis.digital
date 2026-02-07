@@ -323,3 +323,25 @@ test("historical backfill rejects inverted date range", async () => {
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+test("historical backfill dry-run does not mutate store state", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+    const backfill = new HistoricalBackfillService(store);
+    const result = await backfill.run({
+      from: "2022-01-01T00:00:00.000Z",
+      to: "2025-12-31T23:59:59.000Z",
+      tickers: ["SBIN"],
+      persist: false,
+      batchSize: 2,
+    });
+    assert.equal(result.persisted, false);
+    const state = await store.read();
+    assert.equal(state.backfillRuns.length, 0);
+    assert.equal(state.signals.length, 0);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});

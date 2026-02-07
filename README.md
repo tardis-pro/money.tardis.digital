@@ -70,6 +70,10 @@ curl -X POST http://localhost:3000/api/backfill/notable \
   -H "content-type: application/json" \
   -d '{"from":"2022-01-01T00:00:00.000Z","to":"2025-12-31T23:59:59.000Z","tickers":["SBIN"],"batchSize":2}'
 
+curl -X POST http://localhost:3000/api/backfill/notable \
+  -H "content-type: application/json" \
+  -d '{"from":"2022-01-01T00:00:00.000Z","to":"2025-12-31T23:59:59.000Z","tickers":["SBIN"],"batchSize":2,"persist":false}'
+
 curl "http://localhost:3000/api/backfill/runs?status=completed&limit=10"
 
 curl -X POST http://localhost:3000/api/anomalies/correlate \

@@ -40,11 +40,13 @@ export interface HistoricalBackfillInput {
   limit?: number;
   offset?: number;
   batchSize?: number;
+  persist?: boolean;
 }
 
 export interface HistoricalBackfillResult {
   runId: string;
   status: BackfillRunRecord["status"];
+  persisted: boolean;
   hasMore: boolean;
   nextOffset: number;
   loadedSeeds: number;
@@ -229,6 +231,35 @@ export class HistoricalBackfillService {
   async run(input: HistoricalBackfillInput): Promise<HistoricalBackfillResult> {
     const selected = this.selectSeeds(input);
     const { from, to, tickerFilter, offset, selectedSeeds, batchSize, hasMore, nextOffset } = selected;
+    const persist = input.persist ?? true;
+
+    if (!persist) {
+      const state = await this.store.read();
+      const source = state.sources.find((item) => item.id === DEFAULT_SOURCE_ID);
+      const sourceId = source?.id ?? DEFAULT_SOURCE_ID;
+      let skippedDuplicates = 0;
+      for (const seed of selectedSeeds) {
+        const body = `${seed.title}. ${seed.summary}`;
+        const contentHash = sha256(`${seed.id}:${seed.publishedAt}:${body}`);
+        const duplicate = state.artifacts.find((artifact) => artifact.sourceId === sourceId && artifact.contentHash === contentHash);
+        if (duplicate) {
+          skippedDuplicates += 1;
+        }
+      }
+
+      return {
+        runId: "dry-run",
+        status: "completed",
+        persisted: false,
+        hasMore,
+        nextOffset,
+        loadedSeeds: selectedSeeds.length,
+        seededSignals: selectedSeeds.length - skippedDuplicates,
+        createdAlerts: 0,
+        skippedDuplicates,
+      };
+    }
+
     const runId = makeId("backfill");
     const startedAt = nowIso();
 
@@ -342,6 +373,7 @@ export class HistoricalBackfillService {
         return {
           runId,
           status: "completed",
+          persisted: true,
           hasMore,
           nextOffset,
           loadedSeeds: selectedSeeds.length,
