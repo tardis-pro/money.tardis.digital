@@ -54,6 +54,8 @@ export interface AnomalyCorrelationResult {
   source: "observations" | "outcomes";
   analyzedPoints: number;
   clippedPoints: number;
+  anomaliesWithEvents: number;
+  totalEventLinks: number;
   anomalies: CorrelatedAnomaly[];
 }
 
@@ -257,6 +259,8 @@ export class AnomalyCorrelationService {
       source,
       analyzedPoints: series.length,
       clippedPoints,
+      anomaliesWithEvents: anomalies.filter((item) => item.events.length > 0).length,
+      totalEventLinks: anomalies.reduce((sum, item) => sum + item.events.length, 0),
       anomalies,
     };
   }

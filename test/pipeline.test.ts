@@ -265,6 +265,8 @@ test("anomaly correlation links return spikes to nearby events", async () => {
 
     assert.equal(result.ticker, "SBIN");
     assert.ok(result.clippedPoints >= 0);
+    assert.ok(result.anomaliesWithEvents >= 1);
+    assert.ok(result.totalEventLinks >= 1);
     assert.ok(result.anomalies.length >= 1);
     assert.ok(result.anomalies.some((item) => item.events.length > 0));
     const first = result.anomalies[0];
