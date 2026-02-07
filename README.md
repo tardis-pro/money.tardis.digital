@@ -59,6 +59,24 @@ Open `http://localhost:3000`.
 - `GET /api/backfill/runs?status=completed&limit=20`
 - `POST /api/anomalies/correlate`
 
+## Backfill and Anomaly Examples
+
+```bash
+curl -X POST http://localhost:3000/api/backfill/notable/preview \
+  -H "content-type: application/json" \
+  -d '{"from":"2022-01-01T00:00:00.000Z","to":"2025-12-31T23:59:59.000Z","tickers":["SBIN"],"batchSize":2}'
+
+curl -X POST http://localhost:3000/api/backfill/notable \
+  -H "content-type: application/json" \
+  -d '{"from":"2022-01-01T00:00:00.000Z","to":"2025-12-31T23:59:59.000Z","tickers":["SBIN"],"batchSize":2}'
+
+curl "http://localhost:3000/api/backfill/runs?status=completed&limit=10"
+
+curl -X POST http://localhost:3000/api/anomalies/correlate \
+  -H "content-type: application/json" \
+  -d '{"ticker":"SBIN","windowSize":6,"zThreshold":2,"lookbackHours":240,"minEventScore":0.4,"requireEvents":true,"observations":[{"at":"2024-12-05T10:00:00.000Z","close":100},{"at":"2024-12-06T10:00:00.000Z","close":99.7},{"at":"2024-12-07T10:00:00.000Z","close":99.8},{"at":"2024-12-08T10:00:00.000Z","close":99.6},{"at":"2024-12-09T10:00:00.000Z","close":99.7},{"at":"2024-12-10T10:00:00.000Z","close":99.6},{"at":"2024-12-11T10:00:00.000Z","close":99.5},{"at":"2024-12-12T10:00:00.000Z","close":106.8}]}'
+```
+
 ## Notes
 
 - Default storage is file-backed JSON under `data/`; set `STORE_BACKEND=postgres` and `DATABASE_URL` to use Timescale-backed Postgres.
