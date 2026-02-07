@@ -290,3 +290,34 @@ export interface SupplyChainGraph {
   nodes: SupplyChainNode[];
   edges: SupplyChainEdge[];
 }
+
+export interface BackfillDashboard {
+  totalRuns: number;
+  runningRuns: number;
+  completedRuns: number;
+  failedRuns: number;
+  totalSeededSignals: number;
+  totalSkippedDuplicates: number;
+  avgRunDurationMs: number;
+  latestRunStartedAt: string | null;
+}
+
+export interface BackfillDuplicateEntry {
+  sourceId: string;
+  contentHash: string;
+  duplicateCount: number;
+  artifactIds: string[];
+}
+
+export interface BackfillReconciliationReport {
+  generatedAt: string;
+  totalArtifacts: number;
+  duplicateGroups: number;
+  totalDuplicateArtifacts: number;
+  bySource: Array<{
+    sourceId: string;
+    duplicateGroups: number;
+    duplicateArtifacts: number;
+  }>;
+  duplicates: BackfillDuplicateEntry[];
+}

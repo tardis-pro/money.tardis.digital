@@ -34,6 +34,10 @@ Scope: Build a Bloomberg-like policy and market intelligence terminal for India-
   - Identity baseline added with user profiles, role model, route/source entitlement checks, and access audit records.
   - Stream backbone baseline added with durable sequence events, replay endpoint, and stream health metrics.
   - Remaining work for full Sprint 3/4 exits: endpoint-wide entitlement enforcement coverage, websocket fanout with backpressure/replay consumers, and latency SLO instrumentation.
+- Sprint 5 baseline implementation:
+  - Backfill run-control dashboard API added with run status, throughput, duplicate-skip, and duration rollups.
+  - Backfill reconciliation API added with duplicate-content hash grouping and by-source duplicate metrics.
+  - Remaining work for full Sprint 5 exits: partitioned storage strategy and checkpoint orchestration UI.
 
 ## Delivery Structure
 

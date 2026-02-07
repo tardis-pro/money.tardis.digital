@@ -23,6 +23,7 @@ import { SupplyChainGraphService } from "./services/supply-chain-graph.js";
 import { TerminalService } from "./services/terminal.js";
 import { IdentityService } from "./services/identity.js";
 import { StreamBusService } from "./services/stream-bus.js";
+import { BackfillControlService } from "./services/backfill-control.js";
 
 async function terminalHtml(): Promise<string> {
   return readFile(path.join(process.cwd(), "public/terminal.html"), "utf8");
@@ -114,6 +115,10 @@ const streamReplayQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
 });
 
+const backfillReconcileQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(500).optional(),
+});
+
 const backfillRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   status: z.enum(["running", "completed", "failed"]).optional(),
@@ -151,6 +156,7 @@ async function buildServer() {
   const anomalyCorrelation = new AnomalyCorrelationService(store);
   const identity = new IdentityService(store);
   const streamBus = new StreamBusService(store);
+  const backfillControl = new BackfillControlService(store);
 
   function requestUserId(request: { headers: Record<string, unknown> }): string {
     const header = request.headers["x-user-id"];
@@ -669,6 +675,26 @@ async function buildServer() {
           : null;
         return { ...run, durationMs };
       });
+  });
+
+  app.get("/api/backfill/dashboard", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return backfillControl.dashboard();
+  });
+
+  app.get("/api/backfill/reconcile", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = backfillReconcileQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return backfillControl.reconcile(parsed.data.limit ?? 100);
   });
 
   app.post("/api/anomalies/correlate", async (request, reply) => {

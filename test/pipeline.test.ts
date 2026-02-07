@@ -17,6 +17,8 @@ import { SupplyChainGraphService } from "../src/services/supply-chain-graph.js";
 import { TerminalService } from "../src/services/terminal.js";
 import { IdentityService } from "../src/services/identity.js";
 import { StreamBusService } from "../src/services/stream-bus.js";
+import { BackfillControlService } from "../src/services/backfill-control.js";
+import { makeId, nowIso } from "../src/utils.js";
 
 test("pipeline run creates explainable signals with audit records", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
@@ -459,6 +461,74 @@ test("identity authorization and stream bus replay provide S3/S4 baseline", asyn
     const audits = await identity.listAccessAudits(10);
     assert.equal(audits.length, 1);
     assert.equal(audits[0]?.allowed, false);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("backfill control dashboard and reconciliation summarize run health", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+    const backfill = new HistoricalBackfillService(store);
+    await backfill.run({
+      from: "2022-01-01T00:00:00.000Z",
+      to: "2025-12-31T23:59:59.000Z",
+      tickers: ["SBIN"],
+      batchSize: 2,
+    });
+    await backfill.run({
+      from: "2022-01-01T00:00:00.000Z",
+      to: "2025-12-31T23:59:59.000Z",
+      tickers: ["SBIN"],
+      batchSize: 2,
+    });
+
+    const control = new BackfillControlService(store);
+    const dashboard = await control.dashboard();
+    assert.ok(dashboard.totalRuns >= 2);
+    assert.ok(dashboard.completedRuns >= 2);
+    assert.ok(dashboard.totalSkippedDuplicates >= 1);
+
+    await store.transaction((state) => {
+      const fetchedAt = nowIso();
+      state.artifacts.push({
+        id: makeId("artifact"),
+        sourceId: "historical_notable_events",
+        sourceUrl: "https://www.data.gov.in/",
+        fetchedAt,
+        contentHash: "manual-duplicate-hash",
+        parserVersion: "parser-v1",
+        modelVersion: "predictor-v1",
+        contentType: "text/plain",
+        bodyPath: `${tmpDir}/artifact-manual-a.txt`,
+        metadata: {
+          sourceName: "manual",
+          parserType: "html",
+        },
+      });
+      state.artifacts.push({
+        id: makeId("artifact"),
+        sourceId: "historical_notable_events",
+        sourceUrl: "https://www.data.gov.in/",
+        fetchedAt,
+        contentHash: "manual-duplicate-hash",
+        parserVersion: "parser-v1",
+        modelVersion: "predictor-v1",
+        contentType: "text/plain",
+        bodyPath: `${tmpDir}/artifact-manual-b.txt`,
+        metadata: {
+          sourceName: "manual",
+          parserType: "html",
+        },
+      });
+    });
+
+    const reconcile = await control.reconcile(20);
+    assert.ok(reconcile.totalArtifacts >= 1);
+    assert.ok(reconcile.duplicateGroups >= 1);
+    assert.ok(reconcile.totalDuplicateArtifacts >= 1);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

@@ -22,6 +22,7 @@ Open `http://localhost:3000`.
 - Command-driven terminal routing with keyboard shortcuts (`Ctrl/Cmd + K`), parser dispatch, and telemetry logs.
 - Identity and entitlement baseline with per-user route/source access controls and access audit logs (`x-user-id` header).
 - Stream event bus baseline with durable event sequence, replay API, and stream health metrics.
+- Backfill run-control dashboard and reconciliation APIs for duplicate visibility and reliability tracking.
 - React + Framer Motion + Tailwind terminal UI with live Recharts dashboards.
 - Supply-chain graph view (direct + indirect links) with node-level production/demand/import/export/surplus metrics.
 - Alert generation with thresholding, dedupe behavior, and cooldown suppression.
@@ -68,6 +69,8 @@ Open `http://localhost:3000`.
 - `POST /api/backfill/notable/preview`
 - `GET /api/backfill/runs`
 - `GET /api/backfill/runs?status=completed&limit=20`
+- `GET /api/backfill/dashboard`
+- `GET /api/backfill/reconcile?limit=100`
 - `GET /api/backfill/sources`
 - `POST /api/anomalies/correlate`
 - `GET /api/system/status`
