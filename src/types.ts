@@ -227,7 +227,7 @@ export interface StreamEventRecord {
 
 export interface BackfillRunRecord {
   id: string;
-  kind: "notable";
+  kind: "notable" | "real";
   status: "running" | "completed" | "failed";
   from: string;
   to: string;

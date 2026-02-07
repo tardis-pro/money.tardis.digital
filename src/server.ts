@@ -12,6 +12,7 @@ import { AnomalyCorrelationService } from "./services/anomaly-correlation.js";
 import { FeedbackService } from "./services/feedback.js";
 import { GovernanceService } from "./services/governance.js";
 import { HistoricalBackfillService } from "./services/historical-backfill.js";
+import { RealNewsBackfillService } from "./services/real-news-backfill.js";
 import { LearningLoopService } from "./services/learning-loop.js";
 import { ModelTrainingService } from "./services/model-training.js";
 import { OutcomeService } from "./services/outcomes.js";
@@ -40,8 +41,22 @@ import { PersonalizationService } from "./services/personalization.js";
 import { PilotService } from "./services/pilot.js";
 import { LaunchService } from "./services/launch.js";
 
-async function terminalHtml(): Promise<string> {
-  return readFile(path.join(process.cwd(), "public/terminal.html"), "utf8");
+const isDev = process.env.NODE_ENV !== "production";
+
+async function getHtml() {
+  const template = await readFile(path.join(process.cwd(), isDev ? "index.html" : "dist/client/index.html"), "utf-8");
+  
+  if (!isDev) {
+    try {
+      const ssr = await import(path.join(process.cwd(), "dist/server/entry-server.js"));
+      const appHtml = ssr.renderApp();
+      return template.replace("<!--SSR_CONTENT-->", appHtml);
+    } catch {
+      return template;
+    }
+  }
+  
+  return template;
 }
 
 const feedbackReviewSchema = z.object({
@@ -90,6 +105,15 @@ const notableBackfillInputSchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   offset: z.coerce.number().int().min(0).optional(),
   batchSize: z.coerce.number().int().positive().max(500).optional(),
+  persist: z.boolean().optional(),
+});
+
+const realBackfillInputSchema = z.object({
+  from: z.string().min(10).optional(),
+  to: z.string().min(10).optional(),
+  query: z.string().min(3).max(500).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+  batchSize: z.coerce.number().int().positive().max(250).optional(),
   persist: z.boolean().optional(),
 });
 
@@ -360,6 +384,7 @@ async function buildServer() {
   const screeniPy = new ScreeniPyService();
   const supplyChain = new SupplyChainGraphService(store);
   const backfill = new HistoricalBackfillService(store);
+  const realBackfill = new RealNewsBackfillService(store);
   const anomalyCorrelation = new AnomalyCorrelationService(store);
   const identity = new IdentityService(store);
   const streamBus = new StreamBusService(store);
@@ -427,7 +452,20 @@ async function buildServer() {
     return { allowed: true, userId };
   }
 
-  app.get("/", async () => terminalHtml());
+  app.get("/", async (_request, reply) => {
+    const html = await getHtml();
+    return reply.type("text/html").send(html);
+  });
+
+  app.get("/terminal", async (_request, reply) => {
+    const html = await getHtml();
+    return reply.type("text/html").send(html);
+  });
+
+  app.get("/terminal.html", async (_request, reply) => {
+    const html = await getHtml();
+    return reply.type("text/html").send(html);
+  });
 
   app.get("/api/sources", async () => registry.list());
 
@@ -1513,6 +1551,33 @@ async function buildServer() {
     }
   });
 
+  app.post("/api/backfill/real", async (request, reply) => {
+    const parsed = realBackfillInputSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    try {
+      const input = {
+        ...(parsed.data.from ? { from: parsed.data.from } : {}),
+        ...(parsed.data.to ? { to: parsed.data.to } : {}),
+        ...(parsed.data.query ? { query: parsed.data.query } : {}),
+        ...(parsed.data.offset !== undefined ? { offset: parsed.data.offset } : {}),
+        ...(parsed.data.batchSize !== undefined ? { batchSize: parsed.data.batchSize } : {}),
+        ...(parsed.data.persist !== undefined ? { persist: parsed.data.persist } : {}),
+      };
+      const result = await realBackfill.run(input);
+      await governance.log({
+        category: "pipeline",
+        actor: "real-news-backfill",
+        summary: `Real backfill loaded ${result.seededSignals} article-derived signal(s)`,
+        rollbackReady: true,
+      });
+      return result;
+    } catch (error) {
+      return reply.code(400).send({ error: String(error) });
+    }
+  });
+
   app.get("/api/backfill/runs", async (request, reply) => {
     const parsed = backfillRunsQuerySchema.safeParse(request.query);
     if (!parsed.success) {
@@ -1602,3 +1667,8 @@ const port = Number(process.env.PORT ?? 3000);
 
 const app = await buildServer();
 await app.listen({ host: "0.0.0.0", port });
+
+console.log(`Server running at http://localhost:${port}`);
+if (isDev) {
+  console.log(`UI: Run 'bun vite' for Vite dev server at http://localhost:5173`);
+}

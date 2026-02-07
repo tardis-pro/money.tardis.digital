@@ -141,6 +141,7 @@ Open `http://localhost:3000`.
 - `POST /api/model/train`
 - `POST /api/backfill/notable`
 - `POST /api/backfill/notable/preview`
+- `POST /api/backfill/real`
 - `GET /api/backfill/runs`
 - `GET /api/backfill/runs?status=completed&limit=20`
 - `GET /api/backfill/dashboard`
@@ -179,4 +180,15 @@ curl -X POST http://localhost:3000/api/anomalies/correlate \
 - OCR in this MVP is parser-mode aware (`pdf-ocr`) but intentionally lightweight; production OCR stack guidance is expected to evolve per PRD phasing.
 - UI is served from `public/terminal.html` and uses browser-loaded React/Framer Motion/Tailwind/Recharts modules.
 - Timescale quick start: `docker compose up -d timescaledb`.
+- Windmill quick start: `docker compose up -d windmill-db windmill` then open `http://localhost:8000`.
 - Training script path is `scripts/train_model.py` (invoked by `POST /api/model/train`).
+
+## Real 2-Year Backfill (Windmill-friendly)
+
+Run directly:
+
+```bash
+FROM="2024-01-01T00:00:00.000Z" TO="2026-01-01T00:00:00.000Z" BATCH_SIZE=100 ./scripts/windmill_real_backfill.sh
+```
+
+This calls `POST /api/backfill/real` using GDELT's open document feed and writes real article-derived artifacts/signals/alerts with dedupe and resumable `offset`.

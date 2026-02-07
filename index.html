@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>India Policy Signal Terminal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              display: ["Space Grotesk", "sans-serif"],
+              body: ["Manrope", "sans-serif"],
+            },
+            colors: {
+              night: "#060b15",
+              steel: "#111a2d",
+              signal: "#3dd6b5",
+              ember: "#ff9666",
+              cloud: "#9fb4d5",
+            },
+            boxShadow: {
+              glow: "0 0 0 1px rgba(61,214,181,0.24), 0 12px 48px rgba(3,10,22,0.65)",
+            },
+          },
+        },
+      };
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="min-h-screen bg-night font-body text-slate-100">
+    <div
+      class="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(61,214,181,0.16),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(100,149,237,0.14),transparent_40%),linear-gradient(180deg,#060b15_0%,#0a1325_55%,#060b15_100%)]"
+    ></div>
+    <div id="app"><!--SSR_CONTENT--></div>
+    <script type="module" src="/src/client.tsx"></script>
+  </body>
+</html>

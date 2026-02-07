@@ -5,11 +5,13 @@ services:
     image: timescale/timescaledb:latest-pg16
     container_name: policy-signal-timescaledb
     ports:
-      - "5432:5432"
+      - "0.0.0.0:5432:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: policy_signal
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/policy_signal
+      STORE_BACKEND: postgres
     volumes:
       - timescaledb_data:/var/lib/postgresql/data
     healthcheck:
@@ -18,5 +20,37 @@ services:
       timeout: 5s
       retries: 10
 
+  windmill-db:
+    image: postgres:16
+    container_name: policy-signal-windmill-db
+    ports:
+      - "0.0.0.0:5433:5432"
+    environment:
+      POSTGRES_USER: windmill
+      POSTGRES_PASSWORD: windmill
+      POSTGRES_DB: windmill
+    volumes:
+      - windmill_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U windmill -d windmill"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  windmill:
+    image: ghcr.io/windmill-labs/windmill:main
+    container_name: policy-signal-windmill
+    depends_on:
+      windmill-db:
+        condition: service_healthy
+    ports:
+      - "0.0.0.0:8000:8000"
+    environment:
+      DATABASE_URL: postgresql://windmill:windmill@windmill-db:5432/windmill
+      BASE_URL: http://localhost:8000
+      MODE: standalone
+      WM_DISABLE_TELEMETRY: "true"
+
 volumes:
   timescaledb_data:
+  windmill_db_data:

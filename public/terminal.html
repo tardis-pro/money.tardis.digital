@@ -33,17 +33,10 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
       rel="stylesheet"
     />
-  </head>
-  <body class="min-h-screen bg-night font-body text-slate-100">
-    <div
-      class="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(61,214,181,0.16),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(100,149,237,0.14),transparent_40%),linear-gradient(180deg,#060b15_0%,#0a1325_55%,#060b15_100%)]"
-    ></div>
-    <div id="app" class="relative z-10"></div>
-
     <script type="module">
-      import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.3.1";
-      import { createRoot } from "https://esm.sh/react-dom@18.3.1/client";
-      import { motion } from "https://esm.sh/framer-motion@11.11.10?external=react,react-dom";
+      import React from "https://esm.sh/react@18.3.1?dev";
+      import { createRoot } from "https://esm.sh/react-dom@18.3.1/client?dev";
+      import { motion } from "https://esm.sh/framer-motion@11.11.10?dev&external=React";
       import {
         Area,
         AreaChart,
@@ -59,8 +52,8 @@
         Tooltip,
         XAxis,
         YAxis,
-      } from "https://esm.sh/recharts@2.12.7?external=react";
-      import htm from "https://esm.sh/htm@3.1.1";
+      } from "https://esm.sh/recharts@2.12.7?dev&external=React";
+      import htm from "https://esm.sh/htm@3.1.1?dev";
 
       const html = htm.bind(React.createElement);
 
