@@ -321,3 +321,17 @@ export interface BackfillReconciliationReport {
   }>;
   duplicates: BackfillDuplicateEntry[];
 }
+
+export interface SourceDriftEntry {
+  sourceId: string;
+  sourceName: string;
+  reliabilityTier: ReliabilityTier;
+  pollingIntervalSeconds: number;
+  latestArtifactAt: string | null;
+  ageSeconds: number | null;
+  stale: boolean;
+  lowConfidenceRatio: number;
+  fallbackArtifactRatio: number;
+  driftScore: number;
+  reasons: string[];
+}

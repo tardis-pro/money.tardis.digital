@@ -38,6 +38,10 @@ Scope: Build a Bloomberg-like policy and market intelligence terminal for India-
   - Backfill run-control dashboard API added with run status, throughput, duplicate-skip, and duration rollups.
   - Backfill reconciliation API added with duplicate-content hash grouping and by-source duplicate metrics.
   - Remaining work for full Sprint 5 exits: partitioned storage strategy and checkpoint orchestration UI.
+- Sprint 6 baseline implementation:
+  - Source drift detection API added with freshness, low-confidence, and fallback-payload scoring.
+  - Drift output ranked by risk score to support source reliability review loops.
+  - Remaining work for full Sprint 6 exits: expanded RBI/PIB archive connectors and automated license-policy enforcement.
 
 ## Delivery Structure
 

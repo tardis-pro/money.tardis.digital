@@ -23,6 +23,7 @@ Open `http://localhost:3000`.
 - Identity and entitlement baseline with per-user route/source access controls and access audit logs (`x-user-id` header).
 - Stream event bus baseline with durable event sequence, replay API, and stream health metrics.
 - Backfill run-control dashboard and reconciliation APIs for duplicate visibility and reliability tracking.
+- Source drift detection API with freshness/fallback/confidence signals for reliability operations.
 - React + Framer Motion + Tailwind terminal UI with live Recharts dashboards.
 - Supply-chain graph view (direct + indirect links) with node-level production/demand/import/export/surplus metrics.
 - Alert generation with thresholding, dedupe behavior, and cooldown suppression.
@@ -38,6 +39,7 @@ Open `http://localhost:3000`.
 - `POST /api/sources`
 - `POST /api/sources/:sourceId/reliability`
 - `POST /api/sources/:sourceId/enabled`
+- `GET /api/sources/drift`
 - `POST /api/ingest/run?sourceId=<id>`
 - `GET /api/signals?limit=20`
 - `GET /api/heatmap`

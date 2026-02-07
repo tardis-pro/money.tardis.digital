@@ -19,6 +19,7 @@ import { IdentityService } from "../src/services/identity.js";
 import { StreamBusService } from "../src/services/stream-bus.js";
 import { BackfillControlService } from "../src/services/backfill-control.js";
 import { makeId, nowIso } from "../src/utils.js";
+import { SourceDriftService } from "../src/services/source-drift.js";
 
 test("pipeline run creates explainable signals with audit records", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
@@ -529,6 +530,56 @@ test("backfill control dashboard and reconciliation summarize run health", async
     assert.ok(reconcile.totalArtifacts >= 1);
     assert.ok(reconcile.duplicateGroups >= 1);
     assert.ok(reconcile.totalDuplicateArtifacts >= 1);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("source drift service ranks stale and fallback-prone feeds", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+
+    await store.transaction((state) => {
+      const oldTimestamp = "2020-01-01T00:00:00.000Z";
+      state.artifacts.push({
+        id: makeId("artifact"),
+        sourceId: "businessline_rss",
+        sourceUrl: "https://www.thehindubusinessline.com/feeder/default.rss",
+        fetchedAt: oldTimestamp,
+        contentHash: "old-feed",
+        parserVersion: "parser-v1",
+        modelVersion: "predictor-v1",
+        contentType: "application/xml",
+        bodyPath: `${tmpDir}/artifact-old-feed.txt`,
+        metadata: {
+          sourceName: "BusinessLine RSS",
+          parserType: "rss",
+        },
+      });
+      state.events.push({
+        id: makeId("event"),
+        artifactId: state.artifacts[0]?.id ?? "",
+        sourceId: "businessline_rss",
+        eventType: "news",
+        title: "Fallback event",
+        summary: "fallback payload due to fetch limitations",
+        evidenceSnippet: "fallback payload",
+        publishedAt: oldTimestamp,
+        noveltyScore: 0.4,
+        confidence: 0.4,
+      });
+    });
+
+    const driftService = new SourceDriftService(store);
+    const entries = await driftService.detect();
+    assert.ok(entries.length > 0);
+    const top = entries[0];
+    assert.ok(top);
+    assert.equal(top.sourceId, "businessline_rss");
+    assert.ok(top.driftScore > 0);
+    assert.ok(top.reasons.length > 0);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

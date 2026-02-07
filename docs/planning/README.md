@@ -30,3 +30,4 @@ This folder contains the Bloomberg-style terminal planning set requested for a 2
 - Sprint 1/2 baseline is actively implemented in code (command routing, keyboard command surface, command telemetry).
 - Sprint 3/4 foundation is actively implemented in code (identity/entitlement baseline, stream event bus baseline, replay and stream health APIs).
 - Sprint 5 baseline is actively implemented in code (backfill run-control dashboard and reconciliation APIs).
+- Sprint 6 baseline is actively implemented in code (source drift detection with reliability-oriented scoring).

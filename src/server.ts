@@ -24,6 +24,7 @@ import { TerminalService } from "./services/terminal.js";
 import { IdentityService } from "./services/identity.js";
 import { StreamBusService } from "./services/stream-bus.js";
 import { BackfillControlService } from "./services/backfill-control.js";
+import { SourceDriftService } from "./services/source-drift.js";
 
 async function terminalHtml(): Promise<string> {
   return readFile(path.join(process.cwd(), "public/terminal.html"), "utf8");
@@ -157,6 +158,7 @@ async function buildServer() {
   const identity = new IdentityService(store);
   const streamBus = new StreamBusService(store);
   const backfillControl = new BackfillControlService(store);
+  const sourceDrift = new SourceDriftService(store);
 
   function requestUserId(request: { headers: Record<string, unknown> }): string {
     const header = request.headers["x-user-id"];
@@ -256,6 +258,14 @@ async function buildServer() {
     } catch (error) {
       return reply.code(404).send({ error: String(error) });
     }
+  });
+
+  app.get("/api/sources/drift", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return sourceDrift.detect();
   });
 
   app.post("/api/ingest/run", async (request, reply) => {
