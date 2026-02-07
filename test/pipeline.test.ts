@@ -304,3 +304,22 @@ test("anomaly correlation rejects duplicate observation timestamps", async () =>
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+test("historical backfill rejects inverted date range", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+    const backfill = new HistoricalBackfillService(store);
+    await assert.rejects(
+      () =>
+        backfill.run({
+          from: "2025-01-01T00:00:00.000Z",
+          to: "2024-01-01T00:00:00.000Z",
+        }),
+      /Invalid backfill range/,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
