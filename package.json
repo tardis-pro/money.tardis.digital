@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build --silent && node --test dist/test/*.test.js"
+    "test": "npm run build --silent && node --test dist/test/*.test.js",
+    "e2e:backfill": "node scripts/e2e_backfill.mjs"
   },
   "dependencies": {
     "fast-xml-parser": "^4.5.1",

@@ -7,6 +7,7 @@ This repository now contains a working MVP implementation of the PRD in `docs/in
 ```bash
 npm install
 npm run dev
+npm run e2e:backfill
 ```
 
 Open `http://localhost:3000`.
