@@ -345,3 +345,45 @@ test("historical backfill dry-run does not mutate store state", async () => {
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+test("anomaly requireEvents can filter out weak matches", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+
+    const backfill = new HistoricalBackfillService(store);
+    await backfill.run({
+      from: "2022-01-01T00:00:00.000Z",
+      to: "2025-12-31T23:59:59.000Z",
+      tickers: ["SBIN"],
+      batchSize: 2,
+    });
+
+    const anomaly = new AnomalyCorrelationService(store);
+    const result = await anomaly.correlate({
+      ticker: "SBIN",
+      windowSize: 6,
+      zThreshold: 2,
+      lookbackHours: 240,
+      requireEvents: true,
+      minEventScore: 0.95,
+      observations: [
+        { at: "2024-12-05T10:00:00.000Z", close: 100 },
+        { at: "2024-12-06T10:00:00.000Z", close: 99.7 },
+        { at: "2024-12-07T10:00:00.000Z", close: 99.8 },
+        { at: "2024-12-08T10:00:00.000Z", close: 99.6 },
+        { at: "2024-12-09T10:00:00.000Z", close: 99.7 },
+        { at: "2024-12-10T10:00:00.000Z", close: 99.6 },
+        { at: "2024-12-11T10:00:00.000Z", close: 99.5 },
+        { at: "2024-12-12T10:00:00.000Z", close: 106.8 },
+      ],
+    });
+
+    assert.equal(result.anomaliesWithEvents, 0);
+    assert.equal(result.totalEventLinks, 0);
+    assert.equal(result.anomalies.length, 0);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
