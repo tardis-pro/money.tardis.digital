@@ -264,3 +264,27 @@ test("anomaly correlation links return spikes to nearby events", async () => {
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+test("anomaly correlation rejects duplicate observation timestamps", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+    const anomaly = new AnomalyCorrelationService(store);
+    await assert.rejects(
+      () =>
+        anomaly.correlate({
+          ticker: "SBIN",
+          windowSize: 2,
+          observations: [
+            { at: "2024-12-05T10:00:00.000Z", close: 100 },
+            { at: "2024-12-05T10:00:00.000Z", close: 101 },
+            { at: "2024-12-06T10:00:00.000Z", close: 102 },
+          ],
+        }),
+      /Duplicate observation timestamp/,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});

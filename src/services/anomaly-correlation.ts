@@ -77,6 +77,25 @@ function seriesFromObservations(observations: PriceObservation[]): DataPoint[] {
   return returns;
 }
 
+function validateObservations(observations: PriceObservation[]): void {
+  if (observations.length < 2) {
+    throw new Error("At least 2 observations are required.");
+  }
+  const seen = new Set<string>();
+  let previous = -1;
+  for (const item of observations) {
+    const at = asTime(item.at);
+    if (seen.has(item.at)) {
+      throw new Error(`Duplicate observation timestamp: ${item.at}`);
+    }
+    seen.add(item.at);
+    if (at < previous) {
+      throw new Error("Observations must be in ascending timestamp order.");
+    }
+    previous = at;
+  }
+}
+
 function rollingZScores(series: DataPoint[], windowSize: number, threshold: number): CorrelatedAnomaly[] {
   const anomalies: CorrelatedAnomaly[] = [];
   for (let i = windowSize; i < series.length; i += 1) {
@@ -171,6 +190,7 @@ export class AnomalyCorrelationService {
     let series: DataPoint[] = [];
 
     if ((input.observations ?? []).length > 0) {
+      validateObservations(input.observations ?? []);
       source = "observations";
       series = seriesFromObservations(input.observations ?? []);
     } else {
