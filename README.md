@@ -37,6 +37,7 @@ Open `http://localhost:3000`.
 - SRE APIs for SLO budgets, chaos drill records, and reliability status summaries.
 - Workspace personalization APIs for macros, presets, onboarding, and adoption metrics.
 - Pilot APIs for desk scorecards, defect tracking, and launch readiness.
+- Launch APIs for Gate E checklist, operating cadence, and launch status.
 - React + Framer Motion + Tailwind terminal UI with live Recharts dashboards.
 - Supply-chain graph view (direct + indirect links) with node-level production/demand/import/export/surplus metrics.
 - Alert generation with thresholding, dedupe behavior, and cooldown suppression.
@@ -109,6 +110,11 @@ Open `http://localhost:3000`.
 - `POST /api/pilot/defects`
 - `GET /api/pilot/defects`
 - `GET /api/pilot/readiness`
+- `POST /api/launch/checklist`
+- `GET /api/launch/checklist`
+- `POST /api/launch/cadence`
+- `GET /api/launch/cadence`
+- `GET /api/launch/status`
 - `GET /api/supply-chain-graph`
 - `GET /api/alerts`
 - `POST /api/feedback`

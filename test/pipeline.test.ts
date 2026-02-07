@@ -33,6 +33,7 @@ import { GovernanceHardeningService } from "../src/services/governance-hardening
 import { SreService } from "../src/services/sre.js";
 import { PersonalizationService } from "../src/services/personalization.js";
 import { PilotService } from "../src/services/pilot.js";
+import { LaunchService } from "../src/services/launch.js";
 
 test("pipeline run creates explainable signals with audit records", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
@@ -1050,6 +1051,35 @@ test("pilot service tracks scorecards defects and launch readiness", async () =>
     assert.equal(readiness.scorecards, 1);
     assert.equal(readiness.openCriticalDefects, 0);
     assert.equal(typeof readiness.launchReady, "boolean");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("launch service tracks checklist cadence and Gate E readiness", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+    const service = new LaunchService(store);
+
+    await service.addChecklistItem({
+      item: "Rollback strategy validated",
+      owner: "release-manager",
+      completed: true,
+      rollbackReady: true,
+    });
+    await service.addCadence({
+      meeting: "Weekly model/risk review",
+      frequency: "weekly",
+      owner: "product-lead",
+      scope: "Model quality, risk, governance KPI review",
+    });
+
+    const status = await service.launchStatus();
+    assert.equal(status.checklistItems, 1);
+    assert.equal(status.cadenceItems, 1);
+    assert.equal(status.gateEReady, true);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

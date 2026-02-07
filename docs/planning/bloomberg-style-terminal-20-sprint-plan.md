@@ -104,6 +104,11 @@ Scope: Build a Bloomberg-like policy and market intelligence terminal for India-
   - Defect tracking APIs added for critical-path triage before launch.
   - Launch readiness API added with scorecard and critical-defect gate logic.
   - Remaining work for full Sprint 19 exits: production pilot workflow instrumentation and sign-off automation.
+- Sprint 20 baseline implementation:
+  - Launch checklist APIs added for Gate E itemization with rollback-readiness tracking.
+  - Operating cadence APIs added for weekly steady-state model/risk/governance reviews.
+  - Launch status API added to expose Gate E readiness from checklist/cadence state.
+  - Remaining work for post-program scale mode: external integrations, UI deepening, and operational automation at enterprise load.
 
 ## Delivery Structure
 

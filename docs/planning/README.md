@@ -44,3 +44,6 @@ This folder contains the Bloomberg-style terminal planning set requested for a 2
 - Sprint 17 baseline is actively implemented in code (SLO budget, chaos drill, and SRE status APIs).
 - Sprint 18 baseline is actively implemented in code (macros, workspace presets, onboarding/adoption APIs).
 - Sprint 19 baseline is actively implemented in code (pilot scorecards, defect tracking, readiness APIs).
+- Sprint 20 baseline is actively implemented in code (launch checklist, cadence, and Gate E status APIs).
+
+Program note: All 20 sprint baselines have now been implemented and committed incrementally in this repository, with verification and planning-doc updates after each tranche.

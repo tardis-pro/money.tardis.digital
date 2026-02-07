@@ -38,6 +38,7 @@ import { GovernanceHardeningService } from "./services/governance-hardening.js";
 import { SreService } from "./services/sre.js";
 import { PersonalizationService } from "./services/personalization.js";
 import { PilotService } from "./services/pilot.js";
+import { LaunchService } from "./services/launch.js";
 
 async function terminalHtml(): Promise<string> {
   return readFile(path.join(process.cwd(), "public/terminal.html"), "utf8");
@@ -311,6 +312,20 @@ const pilotDefectSchema = z.object({
   owner: z.string().min(1).max(64),
 });
 
+const launchChecklistSchema = z.object({
+  item: z.string().min(3).max(160),
+  owner: z.string().min(1).max(64),
+  completed: z.boolean(),
+  rollbackReady: z.boolean(),
+});
+
+const opsCadenceSchema = z.object({
+  meeting: z.string().min(2).max(120),
+  frequency: z.enum(["daily", "weekly", "bi-weekly", "monthly"]),
+  owner: z.string().min(1).max(64),
+  scope: z.string().min(3).max(300),
+});
+
 const backfillRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   status: z.enum(["running", "completed", "failed"]).optional(),
@@ -363,6 +378,7 @@ async function buildServer() {
   const sre = new SreService(store);
   const personalization = new PersonalizationService(store);
   const pilot = new PilotService(store);
+  const launch = new LaunchService(store);
 
   function requestUserId(request: { headers: Record<string, unknown> }): string {
     const header = request.headers["x-user-id"];
@@ -1100,6 +1116,54 @@ async function buildServer() {
       return access.response;
     }
     return pilot.readiness();
+  });
+
+  app.post("/api/launch/checklist", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = launchChecklistSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return launch.addChecklistItem(parsed.data);
+  });
+
+  app.post("/api/launch/cadence", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = opsCadenceSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return launch.addCadence(parsed.data);
+  });
+
+  app.get("/api/launch/checklist", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return launch.list("launch-checklist", 200);
+  });
+
+  app.get("/api/launch/cadence", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return launch.list("ops-cadence", 200);
+  });
+
+  app.get("/api/launch/status", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return launch.launchStatus();
   });
 
   app.get("/api/watchlists", async (request, reply) => {
