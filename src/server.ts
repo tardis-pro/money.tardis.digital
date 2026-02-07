@@ -413,6 +413,37 @@ async function buildServer() {
     return "demo-analyst";
   }
 
+  const q1ReliabilityRouteCoverage: Array<{ method: "GET" | "POST"; path: string; entitlement: TerminalRoute }> = [
+    { method: "GET", path: "/api/sources", entitlement: "system" },
+    { method: "POST", path: "/api/sources", entitlement: "system" },
+    { method: "POST", path: "/api/sources/:sourceId/reliability", entitlement: "system" },
+    { method: "POST", path: "/api/sources/:sourceId/enabled", entitlement: "system" },
+    { method: "POST", path: "/api/ingest/run", entitlement: "system" },
+    { method: "GET", path: "/api/supply-chain-graph", entitlement: "supply-chain" },
+    { method: "GET", path: "/api/alerts", entitlement: "alerts" },
+    { method: "GET", path: "/api/audit/:signalId", entitlement: "signals" },
+    { method: "GET", path: "/api/feedback", entitlement: "signals" },
+    { method: "POST", path: "/api/feedback", entitlement: "signals" },
+    { method: "POST", path: "/api/feedback/:feedbackId/review", entitlement: "system" },
+    { method: "POST", path: "/api/reliability/review", entitlement: "system" },
+    { method: "GET", path: "/api/data-quality", entitlement: "system" },
+    { method: "POST", path: "/api/data-quality/:issueId/resolve", entitlement: "system" },
+    { method: "POST", path: "/api/outcomes", entitlement: "signals" },
+    { method: "GET", path: "/api/outcomes/summary", entitlement: "signals" },
+    { method: "GET", path: "/api/governance", entitlement: "system" },
+    { method: "POST", path: "/api/governance", entitlement: "system" },
+    { method: "POST", path: "/api/learning/recalibrate", entitlement: "system" },
+    { method: "POST", path: "/api/screenipy/run", entitlement: "system" },
+    { method: "POST", path: "/api/model/train", entitlement: "system" },
+    { method: "POST", path: "/api/backfill/notable", entitlement: "system" },
+    { method: "POST", path: "/api/backfill/notable/preview", entitlement: "system" },
+    { method: "POST", path: "/api/backfill/real", entitlement: "system" },
+    { method: "GET", path: "/api/backfill/runs", entitlement: "system" },
+    { method: "POST", path: "/api/anomalies/correlate", entitlement: "system" },
+    { method: "GET", path: "/api/system/status", entitlement: "system" },
+    { method: "GET", path: "/api/backfill/sources", entitlement: "system" },
+  ];
+
   async function ensureRouteAccess(
     request: { headers: Record<string, unknown> },
     reply: { code: (statusCode: number) => { send: (payload: unknown) => unknown } },
@@ -467,9 +498,19 @@ async function buildServer() {
     return reply.type("text/html").send(html);
   });
 
-  app.get("/api/sources", async () => registry.list());
+  app.get("/api/sources", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return registry.list();
+  });
 
   app.post("/api/sources", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
     try {
       const created = await registry.add(request.body as Parameters<typeof registry.add>[0]);
       return reply.code(201).send(created);
@@ -479,6 +520,10 @@ async function buildServer() {
   });
 
   app.post("/api/sources/:sourceId/reliability", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
     const { sourceId } = request.params as { sourceId: string };
     const parsed = sourceReliabilitySchema.safeParse(request.body);
     if (!parsed.success) {
@@ -499,6 +544,10 @@ async function buildServer() {
   });
 
   app.post("/api/sources/:sourceId/enabled", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
     const { sourceId } = request.params as { sourceId: string };
     const parsed = sourceEnabledSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -527,6 +576,10 @@ async function buildServer() {
   });
 
   app.post("/api/ingest/run", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
     const querySchema = z.object({ sourceId: z.string().optional() });
     const parsedQuery = querySchema.safeParse(request.query);
     if (!parsedQuery.success) {
@@ -568,6 +621,10 @@ async function buildServer() {
   });
 
   app.get("/api/supply-chain-graph", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "supply-chain");
+    if (!access.allowed) {
+      return access.response;
+    }
     const parsed = supplyChainQuerySchema.safeParse(request.query);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues });
@@ -1246,12 +1303,11 @@ async function buildServer() {
   });
 
   app.get("/api/identity/me", async (request, reply) => {
-    const userId = requestUserId(request);
-    const user = await identity.getUser(userId);
-    if (!user) {
-      return reply.code(401).send({ error: `Unknown user ${userId}` });
+    const access = await ensureRouteAccess(request, reply, "overview");
+    if (!access.allowed) {
+      return access.response;
     }
-    return user;
+    return identity.requireUser(access.userId);
   });
 
   app.get("/api/identity/users", async (request, reply) => {
@@ -1354,12 +1410,20 @@ async function buildServer() {
     return terminal.sourceDrillDown(sourceId, user.sourceEntitlements);
   });
 
-  app.get("/api/alerts", async () => {
+  app.get("/api/alerts", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "alerts");
+    if (!access.allowed) {
+      return access.response;
+    }
     const state = await store.read();
     return [...state.alerts].sort((a, b) => b.triggeredAt.localeCompare(a.triggeredAt));
   });
 
   app.get("/api/audit/:signalId", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
     const { signalId } = request.params as { signalId: string };
     const state = await store.read();
     const rows = state.audits.filter((item) => item.signalId === signalId);
@@ -1369,9 +1433,19 @@ async function buildServer() {
     return rows;
   });
 
-  app.get("/api/feedback", async () => feedback.list());
+  app.get("/api/feedback", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return feedback.list();
+  });
 
   app.post("/api/feedback", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
     try {
       const created = await feedback.create(request.body as Parameters<typeof feedback.create>[0]);
       return reply.code(201).send(created);
@@ -1381,6 +1455,10 @@ async function buildServer() {
   });
 
   app.post("/api/feedback/:feedbackId/review", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
     const { feedbackId } = request.params as { feedbackId: string };
     const parsed = feedbackReviewSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -1393,7 +1471,11 @@ async function buildServer() {
     }
   });
 
-  app.post("/api/reliability/review", async () => {
+  app.post("/api/reliability/review", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
     const report = await reliabilityLoop.runReview();
     if (report.actions.length > 0) {
       await governance.log({
@@ -1406,9 +1488,19 @@ async function buildServer() {
     return report;
   });
 
-  app.get("/api/data-quality", async () => dataQuality.list());
+  app.get("/api/data-quality", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return dataQuality.list();
+  });
 
   app.post("/api/data-quality/:issueId/resolve", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
     const { issueId } = request.params as { issueId: string };
     try {
       return await dataQuality.resolve(issueId);
@@ -1418,6 +1510,10 @@ async function buildServer() {
   });
 
   app.post("/api/outcomes", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
     const parsed = outcomeInputSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues });
@@ -1430,6 +1526,10 @@ async function buildServer() {
   });
 
   app.get("/api/outcomes/summary", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
     const parsed = outcomeSummaryQuerySchema.safeParse(request.query);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues });
@@ -1437,9 +1537,19 @@ async function buildServer() {
     return outcomes.summary(parsed.data.horizon);
   });
 
-  app.get("/api/governance", async () => governance.list());
+  app.get("/api/governance", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return governance.list();
+  });
 
   app.post("/api/governance", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
     const parsed = governanceInputSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues });
@@ -1460,7 +1570,11 @@ async function buildServer() {
     }
   });
 
-  app.post("/api/learning/recalibrate", async () => {
+  app.post("/api/learning/recalibrate", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
     const report = await learning.runRecalibration();
     await governance.log({
       category: "model",
@@ -1472,6 +1586,10 @@ async function buildServer() {
   });
 
   app.post("/api/screenipy/run", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
     const parsed = screeniPyInputSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues });
@@ -1485,6 +1603,10 @@ async function buildServer() {
   });
 
   app.post("/api/model/train", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
     const parsed = modelTrainInputSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues });
@@ -1504,6 +1626,10 @@ async function buildServer() {
   });
 
   app.post("/api/backfill/notable", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
     const parsed = notableBackfillInputSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues });
@@ -1532,6 +1658,10 @@ async function buildServer() {
   });
 
   app.post("/api/backfill/notable/preview", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
     const parsed = notableBackfillInputSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues });
@@ -1552,6 +1682,10 @@ async function buildServer() {
   });
 
   app.post("/api/backfill/real", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
     const parsed = realBackfillInputSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues });
@@ -1579,6 +1713,10 @@ async function buildServer() {
   });
 
   app.get("/api/backfill/runs", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
     const parsed = backfillRunsQuerySchema.safeParse(request.query);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues });
@@ -1622,6 +1760,10 @@ async function buildServer() {
   });
 
   app.post("/api/anomalies/correlate", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
     const parsed = anomalyInputSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues });
@@ -1643,7 +1785,11 @@ async function buildServer() {
     }
   });
 
-  app.get("/api/system/status", async () => {
+  app.get("/api/system/status", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
     const state = await store.read();
     const completedBackfills = state.backfillRuns.filter((item) => item.status === "completed").length;
     const failedBackfills = state.backfillRuns.filter((item) => item.status === "failed").length;
@@ -1658,7 +1804,29 @@ async function buildServer() {
     };
   });
 
-  app.get("/api/backfill/sources", async () => historicalSources);
+  app.get("/api/system/route-coverage", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const state = await store.read();
+    const deniedAudits = state.accessAudits.filter((row) => !row.allowed);
+    return {
+      generatedAt: new Date().toISOString(),
+      totalRoutes: q1ReliabilityRouteCoverage.length,
+      routeEntitlements: q1ReliabilityRouteCoverage,
+      deniedAccessCount: deniedAudits.length,
+      lastDeniedAt: deniedAudits[0]?.createdAt ?? null,
+    };
+  });
+
+  app.get("/api/backfill/sources", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return historicalSources;
+  });
 
   return app;
 }
