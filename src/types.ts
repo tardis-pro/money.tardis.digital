@@ -169,6 +169,23 @@ export interface GovernanceChangeRecord {
   createdAt: string;
 }
 
+export interface BackfillRunRecord {
+  id: string;
+  kind: "notable";
+  status: "running" | "completed" | "failed";
+  from: string;
+  to: string;
+  tickers: string[];
+  limit: number;
+  loadedSeeds: number;
+  seededSignals: number;
+  createdAlerts: number;
+  skippedDuplicates: number;
+  startedAt: string;
+  completedAt: string | null;
+  error: string | null;
+}
+
 export interface SectorHeatmapEntry {
   sector: string;
   signalCount: number;

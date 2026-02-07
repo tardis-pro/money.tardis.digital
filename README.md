@@ -53,6 +53,7 @@ Open `http://localhost:3000`.
 - `POST /api/screenipy/run`
 - `POST /api/model/train`
 - `POST /api/backfill/notable`
+- `GET /api/backfill/runs`
 - `POST /api/anomalies/correlate`
 
 ## Notes

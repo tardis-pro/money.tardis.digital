@@ -2,6 +2,7 @@ import { Pool } from "pg";
 import type {
   AlertRecord,
   AuditRecord,
+  BackfillRunRecord,
   DataQualityIssue,
   EventRecord,
   FeedbackRecord,
@@ -25,6 +26,7 @@ const TABLES = [
   "data_quality_issues",
   "outcomes",
   "governance_changes",
+  "backfill_runs",
   "watchlists",
 ] as const;
 
@@ -75,6 +77,9 @@ export class PostgresStore implements Store {
     await this.pool.query(
       "CREATE TABLE IF NOT EXISTS policy_signal.governance_changes (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
     );
+    await this.pool.query(
+      "CREATE TABLE IF NOT EXISTS policy_signal.backfill_runs (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
+    );
 
     await this.pool.query("ALTER TABLE policy_signal.signals DROP CONSTRAINT IF EXISTS signals_pkey");
     await this.pool.query("ALTER TABLE policy_signal.events DROP CONSTRAINT IF EXISTS events_pkey");
@@ -113,7 +118,20 @@ export class PostgresStore implements Store {
   }
 
   async read(): Promise<StateStore> {
-    const [sources, artifacts, events, signals, alerts, feedback, audits, dataQualityIssues, outcomes, governanceChanges, watchlists] =
+    const [
+      sources,
+      artifacts,
+      events,
+      signals,
+      alerts,
+      feedback,
+      audits,
+      dataQualityIssues,
+      outcomes,
+      governanceChanges,
+      backfillRuns,
+      watchlists,
+    ] =
       await Promise.all([
         this.pool.query<{ payload: SourceRegistryItem }>("SELECT payload FROM policy_signal.sources"),
         this.pool.query<{ payload: RawArtifact }>("SELECT payload FROM policy_signal.artifacts ORDER BY ts DESC"),
@@ -129,6 +147,7 @@ export class PostgresStore implements Store {
         this.pool.query<{ payload: GovernanceChangeRecord }>(
           "SELECT payload FROM policy_signal.governance_changes ORDER BY ts DESC",
         ),
+        this.pool.query<{ payload: BackfillRunRecord }>("SELECT payload FROM policy_signal.backfill_runs ORDER BY ts DESC"),
         this.pool.query<{ payload: Watchlist }>("SELECT payload FROM policy_signal.watchlists"),
       ]);
 
@@ -143,6 +162,7 @@ export class PostgresStore implements Store {
       dataQualityIssues: rowPayload(dataQualityIssues.rows),
       outcomes: rowPayload(outcomes.rows),
       governanceChanges: rowPayload(governanceChanges.rows),
+      backfillRuns: rowPayload(backfillRuns.rows),
       watchlists: rowPayload(watchlists.rows),
     };
   }
@@ -226,6 +246,13 @@ export class PostgresStore implements Store {
           "INSERT INTO policy_signal.governance_changes (id, ts, payload) VALUES ($1, $2, $3)",
           [change.id, change.createdAt, change],
         );
+      }
+      for (const run of state.backfillRuns) {
+        await client.query("INSERT INTO policy_signal.backfill_runs (id, ts, payload) VALUES ($1, $2, $3)", [
+          run.id,
+          run.startedAt,
+          run,
+        ]);
       }
       await client.query("COMMIT");
     } catch (error) {

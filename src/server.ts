@@ -88,6 +88,10 @@ const supplyChainQuerySchema = z.object({
   watchlistId: z.string().optional(),
 });
 
+const backfillRunsQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(500).optional(),
+});
+
 async function makeStore(): Promise<Store> {
   if ((process.env.STORE_BACKEND ?? "json") === "postgres") {
     const store = new PostgresStore();
@@ -376,6 +380,18 @@ async function buildServer() {
     } catch (error) {
       return reply.code(400).send({ error: String(error) });
     }
+  });
+
+  app.get("/api/backfill/runs", async (request, reply) => {
+    const parsed = backfillRunsQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    const state = await store.read();
+    const limit = parsed.data.limit ?? 50;
+    return [...state.backfillRuns]
+      .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+      .slice(0, limit);
   });
 
   app.post("/api/anomalies/correlate", async (request, reply) => {

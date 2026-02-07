@@ -6,6 +6,7 @@ import type {
   EventRecord,
   FeedbackRecord,
   GovernanceChangeRecord,
+  BackfillRunRecord,
   OutcomeRecord,
   RawArtifact,
   SignalRecord,
@@ -25,6 +26,7 @@ export interface StateStore {
   dataQualityIssues: DataQualityIssue[];
   outcomes: OutcomeRecord[];
   governanceChanges: GovernanceChangeRecord[];
+  backfillRuns: BackfillRunRecord[];
   watchlists: Watchlist[];
 }
 
@@ -48,6 +50,7 @@ function makeDefaultState(): StateStore {
     dataQualityIssues: [],
     outcomes: [],
     governanceChanges: [],
+    backfillRuns: [],
     watchlists: [],
   };
 }

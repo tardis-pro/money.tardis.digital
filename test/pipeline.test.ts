@@ -206,8 +206,13 @@ test("historical notable-event backfill seeds signals across years", async () =>
 
     assert.ok(result.loadedSeeds > 0);
     assert.ok(result.seededSignals > 0);
+    assert.equal(result.status, "completed");
     const state = await store.read();
     assert.ok(state.signals.some((signal) => signal.linkedEntities.some((entity) => entity.ticker === "SBIN")));
+    const run = state.backfillRuns.find((item) => item.id === result.runId);
+    assert.ok(run);
+    assert.equal(run?.status, "completed");
+    assert.equal(run?.error, null);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

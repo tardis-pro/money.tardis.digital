@@ -1,9 +1,18 @@
 import { writeFile } from "node:fs/promises";
 import entityMap from "../config/entity-map.json" with { type: "json" };
 import notableEvents from "../config/notable-events.json" with { type: "json" };
-import type { AlertRecord, AuditRecord, EventRecord, LinkedEntity, RawArtifact, SignalRecord, SourceRegistryItem } from "../types.js";
+import type {
+  AlertRecord,
+  AuditRecord,
+  BackfillRunRecord,
+  EventRecord,
+  LinkedEntity,
+  RawArtifact,
+  SignalRecord,
+  SourceRegistryItem,
+} from "../types.js";
 import type { Store } from "../store.js";
-import { makeId, sha256 } from "../utils.js";
+import { makeId, nowIso, sha256 } from "../utils.js";
 import { AlertService } from "./alerts.js";
 import { ImpactScorerService } from "./impact-scorer.js";
 import { PredictionService } from "./prediction.js";
@@ -32,6 +41,8 @@ export interface HistoricalBackfillInput {
 }
 
 export interface HistoricalBackfillResult {
+  runId: string;
+  status: BackfillRunRecord["status"];
   loadedSeeds: number;
   seededSignals: number;
   createdAlerts: number;
@@ -134,7 +145,32 @@ export class HistoricalBackfillService {
   async run(input: HistoricalBackfillInput): Promise<HistoricalBackfillResult> {
     const from = input.from ? parseIso(input.from) : new Date("2000-01-01T00:00:00.000Z");
     const to = input.to ? parseIso(input.to) : new Date("2100-01-01T00:00:00.000Z");
+    if (to < from) {
+      throw new Error("Invalid backfill range: 'to' must be greater than or equal to 'from'.");
+    }
     const tickerFilter = new Set(normalizedTickers(input.tickers));
+    const runId = makeId("backfill");
+    const startedAt = nowIso();
+
+    await this.store.transaction((state) => {
+      const run: BackfillRunRecord = {
+        id: runId,
+        kind: "notable",
+        status: "running",
+        from: from.toISOString(),
+        to: to.toISOString(),
+        tickers: [...tickerFilter],
+        limit: input.limit ?? this.seeds.length,
+        loadedSeeds: 0,
+        seededSignals: 0,
+        createdAlerts: 0,
+        skippedDuplicates: 0,
+        startedAt,
+        completedAt: null,
+        error: null,
+      };
+      state.backfillRuns.push(run);
+    });
 
     const selectedSeeds = this.seeds
       .filter((seed) => {
@@ -151,13 +187,14 @@ export class HistoricalBackfillService {
 
     const bodyWrites: Array<{ bodyPath: string; body: string }> = [];
 
-    const result = await this.store.transaction((state) => {
-      const source = this.ensureSource(state.sources);
-      let seededSignals = 0;
-      let createdAlerts = 0;
-      let skippedDuplicates = 0;
+    try {
+      const result = await this.store.transaction((state) => {
+        const source = this.ensureSource(state.sources);
+        let seededSignals = 0;
+        let createdAlerts = 0;
+        let skippedDuplicates = 0;
 
-      for (const seed of selectedSeeds) {
+        for (const seed of selectedSeeds) {
         const body = `${seed.title}. ${seed.summary}`;
         const contentHash = sha256(`${seed.id}:${seed.publishedAt}:${body}`);
         const duplicate = state.artifacts.find(
@@ -229,17 +266,44 @@ export class HistoricalBackfillService {
         }
 
         seededSignals += 1;
-      }
+        }
 
-      return {
-        loadedSeeds: selectedSeeds.length,
-        seededSignals,
-        createdAlerts,
-        skippedDuplicates,
-      } satisfies HistoricalBackfillResult;
-    });
+        return {
+          runId,
+          status: "completed",
+          loadedSeeds: selectedSeeds.length,
+          seededSignals,
+          createdAlerts,
+          skippedDuplicates,
+        } satisfies HistoricalBackfillResult;
+      });
 
-    await Promise.all(bodyWrites.map((item) => writeFile(item.bodyPath, item.body, "utf8")));
-    return result;
+      await Promise.all(bodyWrites.map((item) => writeFile(item.bodyPath, item.body, "utf8")));
+      await this.store.transaction((state) => {
+        const run = state.backfillRuns.find((item) => item.id === runId);
+        if (!run) {
+          return;
+        }
+        run.status = "completed";
+        run.completedAt = nowIso();
+        run.loadedSeeds = result.loadedSeeds;
+        run.seededSignals = result.seededSignals;
+        run.createdAlerts = result.createdAlerts;
+        run.skippedDuplicates = result.skippedDuplicates;
+        run.error = null;
+      });
+      return result;
+    } catch (error) {
+      await this.store.transaction((state) => {
+        const run = state.backfillRuns.find((item) => item.id === runId);
+        if (!run) {
+          return;
+        }
+        run.status = "failed";
+        run.completedAt = nowIso();
+        run.error = error instanceof Error ? error.message : String(error);
+      });
+      throw error;
+    }
   }
 }
