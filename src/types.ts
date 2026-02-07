@@ -497,3 +497,25 @@ export interface PortfolioAttributionRow {
   latestSignalScore: number;
   eventTitle: string | null;
 }
+
+export interface RiskPolicy {
+  id: string;
+  portfolioId: string;
+  maxSingleNameWeight: number;
+  maxSectorWeight: number;
+  maxDrawdownPct: number;
+  minLiquidityScore: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RiskSnapshot {
+  id: string;
+  portfolioId: string;
+  concentrationScore: number;
+  drawdownProxyPct: number;
+  liquidityProxyScore: number;
+  breached: boolean;
+  breachReasons: string[];
+  createdAt: string;
+}

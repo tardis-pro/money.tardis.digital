@@ -16,6 +16,8 @@ import type {
   OutcomeRecord,
   PortfolioRecord,
   RawArtifact,
+  RiskPolicy,
+  RiskSnapshot,
   ScreenDefinition,
   ScreenRun,
   SignalRecord,
@@ -53,6 +55,8 @@ export interface StateStore {
   alertDispatches: AlertDispatchRecord[];
   portfolios: PortfolioRecord[];
   scenarioBookmarks: ScenarioBookmark[];
+  riskPolicies: RiskPolicy[];
+  riskSnapshots: RiskSnapshot[];
 }
 
 export interface Store {
@@ -90,6 +94,8 @@ function makeDefaultState(): StateStore {
     alertDispatches: [],
     portfolios: [],
     scenarioBookmarks: [],
+    riskPolicies: [],
+    riskSnapshots: [],
   };
 }
 
@@ -201,6 +207,8 @@ export class JsonStore implements Store {
       alertDispatches: loaded.alertDispatches ?? fallback.alertDispatches,
       portfolios: loaded.portfolios ?? fallback.portfolios,
       scenarioBookmarks: loaded.scenarioBookmarks ?? fallback.scenarioBookmarks,
+      riskPolicies: loaded.riskPolicies ?? fallback.riskPolicies,
+      riskSnapshots: loaded.riskSnapshots ?? fallback.riskSnapshots,
     };
   }
 

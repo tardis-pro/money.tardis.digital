@@ -69,6 +69,11 @@ Scope: Build a Bloomberg-like policy and market intelligence terminal for India-
   - Exposure and attribution APIs added for sector weights, market value, and event-linked PnL rows.
   - Scenario bookmark APIs added for recurring desk stress templates.
   - Remaining work for full Sprint 12 exits: near-real-time refresh transport and external reconciliation adapters.
+- Sprint 13 baseline implementation:
+  - Risk policy API added with enforceable concentration/drawdown/liquidity constraints per portfolio.
+  - Risk snapshot API added for repeatable portfolio risk-state captures with breach reasons.
+  - Snapshot history API added for desk-level monitoring of risk evolution.
+  - Remaining work for full Sprint 13 exits: approval workflow and stress-template lineage.
 
 ## Delivery Structure
 

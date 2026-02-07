@@ -16,6 +16,8 @@ import type {
   OutcomeRecord,
   PortfolioRecord,
   RawArtifact,
+  RiskPolicy,
+  RiskSnapshot,
   ScenarioBookmark,
   ScreenDefinition,
   ScreenRun,
@@ -53,6 +55,8 @@ const TABLES = [
   "alert_dispatches",
   "portfolios",
   "scenario_bookmarks",
+  "risk_policies",
+  "risk_snapshots",
 ] as const;
 
 function rowPayload<T>(rows: Array<{ payload: T }>): T[] {
@@ -144,6 +148,12 @@ export class PostgresStore implements Store {
     await this.pool.query(
       "CREATE TABLE IF NOT EXISTS policy_signal.scenario_bookmarks (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
     );
+    await this.pool.query(
+      "CREATE TABLE IF NOT EXISTS policy_signal.risk_policies (id text PRIMARY KEY, payload jsonb NOT NULL)",
+    );
+    await this.pool.query(
+      "CREATE TABLE IF NOT EXISTS policy_signal.risk_snapshots (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
+    );
 
     await this.pool.query("ALTER TABLE policy_signal.signals DROP CONSTRAINT IF EXISTS signals_pkey");
     await this.pool.query("ALTER TABLE policy_signal.events DROP CONSTRAINT IF EXISTS events_pkey");
@@ -208,6 +218,8 @@ export class PostgresStore implements Store {
       alertDispatches,
       portfolios,
       scenarioBookmarks,
+      riskPolicies,
+      riskSnapshots,
     ] =
       await Promise.all([
         this.pool.query<{ payload: SourceRegistryItem }>("SELECT payload FROM policy_signal.sources"),
@@ -239,6 +251,8 @@ export class PostgresStore implements Store {
         this.pool.query<{ payload: AlertDispatchRecord }>("SELECT payload FROM policy_signal.alert_dispatches ORDER BY ts DESC"),
         this.pool.query<{ payload: PortfolioRecord }>("SELECT payload FROM policy_signal.portfolios ORDER BY id ASC"),
         this.pool.query<{ payload: ScenarioBookmark }>("SELECT payload FROM policy_signal.scenario_bookmarks ORDER BY ts DESC"),
+        this.pool.query<{ payload: RiskPolicy }>("SELECT payload FROM policy_signal.risk_policies ORDER BY id ASC"),
+        this.pool.query<{ payload: RiskSnapshot }>("SELECT payload FROM policy_signal.risk_snapshots ORDER BY ts DESC"),
       ]);
 
     return {
@@ -267,6 +281,8 @@ export class PostgresStore implements Store {
       alertDispatches: rowPayload(alertDispatches.rows),
       portfolios: rowPayload(portfolios.rows),
       scenarioBookmarks: rowPayload(scenarioBookmarks.rows),
+      riskPolicies: rowPayload(riskPolicies.rows),
+      riskSnapshots: rowPayload(riskSnapshots.rows),
     };
   }
 
@@ -437,6 +453,19 @@ export class PostgresStore implements Store {
           bookmark.id,
           bookmark.createdAt,
           bookmark,
+        ]);
+      }
+      for (const policy of state.riskPolicies) {
+        await client.query("INSERT INTO policy_signal.risk_policies (id, payload) VALUES ($1, $2)", [
+          policy.id,
+          policy,
+        ]);
+      }
+      for (const snapshot of state.riskSnapshots) {
+        await client.query("INSERT INTO policy_signal.risk_snapshots (id, ts, payload) VALUES ($1, $2, $3)", [
+          snapshot.id,
+          snapshot.createdAt,
+          snapshot,
         ]);
       }
       await client.query("COMMIT");

@@ -26,6 +26,7 @@ import { ChartingService } from "../src/services/charting.js";
 import { ScreeningService } from "../src/services/screening.js";
 import { AlertOrchestratorService } from "../src/services/alert-orchestrator.js";
 import { PortfolioService } from "../src/services/portfolio.js";
+import { RiskService } from "../src/services/risk.js";
 
 test("pipeline run creates explainable signals with audit records", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
@@ -792,6 +793,40 @@ test("portfolio service supports exposure attribution and scenario bookmarks", a
 
     const scenarios = await portfolioService.listScenarios(portfolio.id);
     assert.equal(scenarios.length, 1);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("risk service enforces policy and produces reproducible snapshots", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+    const portfolioService = new PortfolioService(store);
+    const portfolio = await portfolioService.createPortfolio({
+      name: "Risk Book",
+      createdBy: "demo-operator",
+      positions: [
+        { ticker: "SBIN", quantity: 100, avgPrice: 750, marketPrice: 700 },
+        { ticker: "LT", quantity: 20, avgPrice: 3500, marketPrice: 3300 },
+      ],
+    });
+
+    const riskService = new RiskService(store);
+    await riskService.savePolicy({
+      portfolioId: portfolio.id,
+      maxSingleNameWeight: 0.55,
+      maxSectorWeight: 0.8,
+      maxDrawdownPct: 0.03,
+      minLiquidityScore: 0.4,
+    });
+    const snapshot = await riskService.snapshot(portfolio.id);
+    assert.equal(snapshot.portfolioId, portfolio.id);
+    assert.ok(snapshot.drawdownProxyPct >= 0);
+
+    const rows = await riskService.snapshots(portfolio.id, 10);
+    assert.equal(rows.length, 1);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

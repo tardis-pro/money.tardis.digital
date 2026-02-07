@@ -31,6 +31,7 @@ import { ChartingService } from "./services/charting.js";
 import { ScreeningService } from "./services/screening.js";
 import { AlertOrchestratorService } from "./services/alert-orchestrator.js";
 import { PortfolioService } from "./services/portfolio.js";
+import { RiskService } from "./services/risk.js";
 
 async function terminalHtml(): Promise<string> {
   return readFile(path.join(process.cwd(), "public/terminal.html"), "utf8");
@@ -198,6 +199,17 @@ const portfolioScenarioSchema = z.object({
   notes: z.string().min(1).max(400),
 });
 
+const riskPolicySchema = z.object({
+  maxSingleNameWeight: z.number().min(0).max(1),
+  maxSectorWeight: z.number().min(0).max(1),
+  maxDrawdownPct: z.number().min(0).max(1),
+  minLiquidityScore: z.number().min(0).max(1),
+});
+
+const riskSnapshotsQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).optional(),
+});
+
 const backfillRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   status: z.enum(["running", "completed", "failed"]).optional(),
@@ -243,6 +255,7 @@ async function buildServer() {
   const screening = new ScreeningService(store);
   const alertOrchestrator = new AlertOrchestratorService(store);
   const portfolio = new PortfolioService(store);
+  const risk = new RiskService(store);
 
   function requestUserId(request: { headers: Record<string, unknown> }): string {
     const header = request.headers["x-user-id"];
@@ -630,6 +643,55 @@ async function buildServer() {
     }
     const { portfolioId } = request.params as { portfolioId: string };
     return portfolio.listScenarios(portfolioId);
+  });
+
+  app.post("/api/portfolios/:portfolioId/risk-policy", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = riskPolicySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    const { portfolioId } = request.params as { portfolioId: string };
+    try {
+      return await risk.savePolicy({
+        portfolioId,
+        maxSingleNameWeight: parsed.data.maxSingleNameWeight,
+        maxSectorWeight: parsed.data.maxSectorWeight,
+        maxDrawdownPct: parsed.data.maxDrawdownPct,
+        minLiquidityScore: parsed.data.minLiquidityScore,
+      });
+    } catch (error) {
+      return reply.code(404).send({ error: String(error) });
+    }
+  });
+
+  app.post("/api/portfolios/:portfolioId/risk-snapshot", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const { portfolioId } = request.params as { portfolioId: string };
+    try {
+      return await risk.snapshot(portfolioId);
+    } catch (error) {
+      return reply.code(404).send({ error: String(error) });
+    }
+  });
+
+  app.get("/api/portfolios/:portfolioId/risk-snapshots", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = riskSnapshotsQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    const { portfolioId } = request.params as { portfolioId: string };
+    return risk.snapshots(portfolioId, parsed.data.limit ?? 50);
   });
 
   app.get("/api/watchlists", async (request, reply) => {
