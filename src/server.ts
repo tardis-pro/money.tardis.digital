@@ -85,6 +85,7 @@ const anomalyInputSchema = z.object({
   lookbackHours: z.coerce.number().int().min(1).max(720).optional(),
   maxMatches: z.coerce.number().int().min(1).max(10).optional(),
   minEventScore: z.number().min(0).max(1).optional(),
+  requireEvents: z.boolean().optional(),
 });
 
 const supplyChainQuerySchema = z.object({
@@ -433,6 +434,7 @@ async function buildServer() {
         ...(parsed.data.lookbackHours ? { lookbackHours: parsed.data.lookbackHours } : {}),
         ...(parsed.data.maxMatches ? { maxMatches: parsed.data.maxMatches } : {}),
         ...(parsed.data.minEventScore !== undefined ? { minEventScore: parsed.data.minEventScore } : {}),
+        ...(parsed.data.requireEvents !== undefined ? { requireEvents: parsed.data.requireEvents } : {}),
       };
       return await anomalyCorrelation.correlate(anomalyInput);
     } catch (error) {

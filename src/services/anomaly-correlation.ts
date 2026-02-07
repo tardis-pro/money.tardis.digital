@@ -15,6 +15,7 @@ export interface AnomalyCorrelationInput {
   lookbackHours?: number;
   maxMatches?: number;
   minEventScore?: number;
+  requireEvents?: boolean;
 }
 
 interface DataPoint {
@@ -200,6 +201,7 @@ export class AnomalyCorrelationService {
     const lookbackHours = input.lookbackHours ?? 72;
     const maxMatches = input.maxMatches ?? 3;
     const minEventScore = input.minEventScore ?? 0;
+    const requireEvents = input.requireEvents ?? false;
 
     let source: "observations" | "outcomes" = "outcomes";
     let series: DataPoint[] = [];
@@ -237,16 +239,18 @@ export class AnomalyCorrelationService {
       signal.linkedEntities.some((entity) => entity.ticker.toUpperCase() === ticker),
     );
 
-    const anomalies = rollingZScores(series, windowSize, zThreshold).map((anomaly) => {
-      const anomalyAtMs = asTime(anomaly.at);
-      const matches = tickerSignals
-        .map((signal) => scoredEventMatch(signal, anomalyAtMs, anomaly.direction, lookbackHours))
-        .filter((item): item is CorrelatedEvent => item !== null)
-        .filter((item) => item.score >= minEventScore)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, maxMatches);
-      return { ...anomaly, events: matches };
-    });
+    const anomalies = rollingZScores(series, windowSize, zThreshold)
+      .map((anomaly) => {
+        const anomalyAtMs = asTime(anomaly.at);
+        const matches = tickerSignals
+          .map((signal) => scoredEventMatch(signal, anomalyAtMs, anomaly.direction, lookbackHours))
+          .filter((item): item is CorrelatedEvent => item !== null)
+          .filter((item) => item.score >= minEventScore)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, maxMatches);
+        return { ...anomaly, events: matches };
+      })
+      .filter((anomaly) => (requireEvents ? anomaly.events.length > 0 : true));
 
     return {
       ticker,

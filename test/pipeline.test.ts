@@ -250,6 +250,7 @@ test("anomaly correlation links return spikes to nearby events", async () => {
       zThreshold: 2.0,
       lookbackHours: 240,
       minEventScore: 0.4,
+      requireEvents: true,
       observations: [
         { at: "2024-12-05T10:00:00.000Z", close: 100 },
         { at: "2024-12-06T10:00:00.000Z", close: 99.7 },
@@ -272,6 +273,7 @@ test("anomaly correlation links return spikes to nearby events", async () => {
     assert.equal(first.threshold, 2);
     assert.ok(first.events[0]?.components.signalWeight !== undefined);
     assert.ok(first.events.every((event) => event.score >= 0.4));
+    assert.ok(result.anomalies.every((item) => item.events.length > 0));
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
