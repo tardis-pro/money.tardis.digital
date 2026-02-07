@@ -68,6 +68,8 @@ const notableBackfillInputSchema = z.object({
   to: z.string().min(10).optional(),
   tickers: z.array(z.string().min(1)).optional(),
   limit: z.coerce.number().int().positive().max(500).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+  batchSize: z.coerce.number().int().positive().max(500).optional(),
 });
 
 const anomalyObservationSchema = z.object({
@@ -368,6 +370,8 @@ async function buildServer() {
         ...(parsed.data.to ? { to: parsed.data.to } : {}),
         ...(parsed.data.tickers ? { tickers: parsed.data.tickers } : {}),
         ...(parsed.data.limit ? { limit: parsed.data.limit } : {}),
+        ...(parsed.data.offset !== undefined ? { offset: parsed.data.offset } : {}),
+        ...(parsed.data.batchSize !== undefined ? { batchSize: parsed.data.batchSize } : {}),
       };
       const result = await backfill.run(backfillInput);
       await governance.log({

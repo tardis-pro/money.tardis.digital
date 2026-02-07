@@ -38,11 +38,15 @@ export interface HistoricalBackfillInput {
   to?: string;
   tickers?: string[];
   limit?: number;
+  offset?: number;
+  batchSize?: number;
 }
 
 export interface HistoricalBackfillResult {
   runId: string;
   status: BackfillRunRecord["status"];
+  hasMore: boolean;
+  nextOffset: number;
   loadedSeeds: number;
   seededSignals: number;
   createdAlerts: number;
@@ -149,6 +153,7 @@ export class HistoricalBackfillService {
       throw new Error("Invalid backfill range: 'to' must be greater than or equal to 'from'.");
     }
     const tickerFilter = new Set(normalizedTickers(input.tickers));
+    const offset = Math.max(0, input.offset ?? 0);
     const runId = makeId("backfill");
     const startedAt = nowIso();
 
@@ -161,6 +166,10 @@ export class HistoricalBackfillService {
         to: to.toISOString(),
         tickers: [...tickerFilter],
         limit: input.limit ?? this.seeds.length,
+        offset,
+        batchSize: input.batchSize ?? input.limit ?? this.seeds.length,
+        nextOffset: offset,
+        hasMore: false,
         loadedSeeds: 0,
         seededSignals: 0,
         createdAlerts: 0,
@@ -172,7 +181,7 @@ export class HistoricalBackfillService {
       state.backfillRuns.push(run);
     });
 
-    const selectedSeeds = this.seeds
+    const matchingSeeds = this.seeds
       .filter((seed) => {
         const eventAt = parseIso(seed.publishedAt);
         if (eventAt < from || eventAt > to) {
@@ -182,8 +191,11 @@ export class HistoricalBackfillService {
           return true;
         }
         return seed.tickers.some((ticker) => tickerFilter.has(ticker));
-      })
-      .slice(0, input.limit ?? this.seeds.length);
+      });
+    const batchSize = Math.max(1, input.batchSize ?? input.limit ?? matchingSeeds.length);
+    const selectedSeeds = matchingSeeds.slice(offset, offset + batchSize);
+    const nextOffset = offset + selectedSeeds.length;
+    const hasMore = nextOffset < matchingSeeds.length;
 
     const bodyWrites: Array<{ bodyPath: string; body: string }> = [];
 
@@ -271,6 +283,8 @@ export class HistoricalBackfillService {
         return {
           runId,
           status: "completed",
+          hasMore,
+          nextOffset,
           loadedSeeds: selectedSeeds.length,
           seededSignals,
           createdAlerts,
@@ -286,6 +300,8 @@ export class HistoricalBackfillService {
         }
         run.status = "completed";
         run.completedAt = nowIso();
+        run.hasMore = result.hasMore;
+        run.nextOffset = result.nextOffset;
         run.loadedSeeds = result.loadedSeeds;
         run.seededSignals = result.seededSignals;
         run.createdAlerts = result.createdAlerts;

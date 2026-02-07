@@ -202,6 +202,7 @@ test("historical notable-event backfill seeds signals across years", async () =>
       from: "2022-01-01T00:00:00.000Z",
       to: "2024-12-31T23:59:59.000Z",
       tickers: ["SBIN", "IRCTC"],
+      batchSize: 1,
     });
 
     assert.ok(result.loadedSeeds > 0);
@@ -213,6 +214,8 @@ test("historical notable-event backfill seeds signals across years", async () =>
     assert.ok(run);
     assert.equal(run?.status, "completed");
     assert.equal(run?.error, null);
+    assert.equal(typeof result.hasMore, "boolean");
+    assert.ok(result.nextOffset >= 1);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

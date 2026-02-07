@@ -177,6 +177,10 @@ export interface BackfillRunRecord {
   to: string;
   tickers: string[];
   limit: number;
+  offset: number;
+  batchSize: number;
+  nextOffset: number;
+  hasMore: boolean;
   loadedSeeds: number;
   seededSignals: number;
   createdAlerts: number;
