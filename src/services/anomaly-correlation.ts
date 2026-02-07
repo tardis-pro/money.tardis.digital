@@ -28,6 +28,12 @@ interface CorrelatedEvent {
   publishedAt: string;
   score: number;
   rationale: string;
+  components: {
+    timeWeight: number;
+    signalWeight: number;
+    confidenceWeight: number;
+    directionWeight: number;
+  };
 }
 
 interface CorrelatedAnomaly {
@@ -35,6 +41,9 @@ interface CorrelatedAnomaly {
   value: number;
   zScore: number;
   direction: "positive" | "negative";
+  baselineMean: number;
+  baselineStdDev: number;
+  threshold: number;
   events: CorrelatedEvent[];
 }
 
@@ -91,6 +100,9 @@ function rollingZScores(series: DataPoint[], windowSize: number, threshold: numb
       value: target.value,
       zScore,
       direction: target.value >= 0 ? "positive" : "negative",
+      baselineMean: mean,
+      baselineStdDev: stdDev,
+      threshold,
       events: [],
     });
   }
@@ -120,7 +132,10 @@ function scoredEventMatch(
       : signal.impact.direction === anomalyDirection
         ? 1
         : 0;
-  const score = clamp(timeWeight * 0.45 + signal.score * 0.35 + signal.impact.confidence * 0.12 + directionWeight * 0.08, 0, 1);
+  const signalWeight = signal.score * 0.35;
+  const confidenceWeight = signal.impact.confidence * 0.12;
+  const directionComponent = directionWeight * 0.08;
+  const score = clamp(timeWeight * 0.45 + signalWeight + confidenceWeight + directionComponent, 0, 1);
   return {
     signalId: signal.id,
     eventType: signal.event.eventType,
@@ -128,6 +143,12 @@ function scoredEventMatch(
     publishedAt,
     score,
     rationale: `time=${deltaHours.toFixed(1)}h signalScore=${signal.score.toFixed(3)} impactDir=${signal.impact.direction}`,
+    components: {
+      timeWeight: Number((timeWeight * 0.45).toFixed(6)),
+      signalWeight: Number(signalWeight.toFixed(6)),
+      confidenceWeight: Number(confidenceWeight.toFixed(6)),
+      directionWeight: Number(directionComponent.toFixed(6)),
+    },
   };
 }
 
