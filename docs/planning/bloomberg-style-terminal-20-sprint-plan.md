@@ -46,6 +46,10 @@ Scope: Build a Bloomberg-like policy and market intelligence terminal for India-
   - Market snapshot API added with adjustment-aware prices and breadth-driven ranking.
   - Corporate-action adjustment factors introduced for key instruments in snapshot output.
   - Remaining work for full Sprint 7 exits: real exchange-integrated streaming prices and deeper integrity checks.
+- Sprint 8 baseline implementation:
+  - Entity-link diagnostics API added with coverage, confidence metrics, and top-link reason trails.
+  - Explainable "why linked" traces are now queryable as structured diagnostics data.
+  - Remaining work for full Sprint 8 exits: expanded entity graph coverage and threshold-governed precision benchmarks.
 
 ## Delivery Structure
 

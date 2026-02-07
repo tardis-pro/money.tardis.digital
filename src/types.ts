@@ -346,3 +346,16 @@ export interface MarketSnapshotEntry {
   breadthSignalScore: number;
   updatedAt: string;
 }
+
+export interface EntityLinkDiagnostics {
+  totalSignals: number;
+  signalsWithEntities: number;
+  coverageRatio: number;
+  averageEntityConfidence: number;
+  topEntityLinks: Array<{
+    ticker: string;
+    count: number;
+    avgConfidence: number;
+    reasons: string[];
+  }>;
+}

@@ -26,6 +26,7 @@ import { StreamBusService } from "./services/stream-bus.js";
 import { BackfillControlService } from "./services/backfill-control.js";
 import { SourceDriftService } from "./services/source-drift.js";
 import { MarketSnapshotService } from "./services/market-snapshot.js";
+import { EntityLinkDiagnosticsService } from "./services/entity-link-diagnostics.js";
 
 async function terminalHtml(): Promise<string> {
   return readFile(path.join(process.cwd(), "public/terminal.html"), "utf8");
@@ -125,6 +126,10 @@ const marketSnapshotQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
 });
 
+const entityLinkDiagnosticsQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(50).optional(),
+});
+
 const backfillRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   status: z.enum(["running", "completed", "failed"]).optional(),
@@ -165,6 +170,7 @@ async function buildServer() {
   const backfillControl = new BackfillControlService(store);
   const sourceDrift = new SourceDriftService(store);
   const marketSnapshot = new MarketSnapshotService(store);
+  const entityLinkDiagnostics = new EntityLinkDiagnosticsService(store);
 
   function requestUserId(request: { headers: Record<string, unknown> }): string {
     const header = request.headers["x-user-id"];
@@ -333,6 +339,18 @@ async function buildServer() {
       return reply.code(400).send({ error: parsed.error.issues });
     }
     return marketSnapshot.snapshots(parsed.data.limit ?? 50);
+  });
+
+  app.get("/api/entity-links/diagnostics", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = entityLinkDiagnosticsQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return entityLinkDiagnostics.summary(parsed.data.limit ?? 10);
   });
 
   app.get("/api/watchlists", async (request, reply) => {

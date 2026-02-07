@@ -21,6 +21,7 @@ import { BackfillControlService } from "../src/services/backfill-control.js";
 import { makeId, nowIso } from "../src/utils.js";
 import { SourceDriftService } from "../src/services/source-drift.js";
 import { MarketSnapshotService } from "../src/services/market-snapshot.js";
+import { EntityLinkDiagnosticsService } from "../src/services/entity-link-diagnostics.js";
 
 test("pipeline run creates explainable signals with audit records", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
@@ -599,6 +600,28 @@ test("market snapshot service returns adjustment-aware breadth snapshots", async
     assert.ok(rows.length > 0);
     assert.ok(rows.some((row) => row.adjustmentFactor !== 1));
     assert.ok(rows.every((row) => Number.isFinite(row.adjustedPrice)));
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("entity link diagnostics returns coverage and explainable reason trails", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+    const pipeline = new SignalPipelineService(store);
+    await pipeline.run();
+
+    const diagnostics = new EntityLinkDiagnosticsService(store);
+    const result = await diagnostics.summary(5);
+    assert.ok(result.totalSignals > 0);
+    assert.ok(result.coverageRatio > 0);
+    assert.ok(result.averageEntityConfidence > 0);
+    assert.ok(result.topEntityLinks.length > 0);
+    const firstLink = result.topEntityLinks[0];
+    assert.ok(firstLink);
+    assert.ok(firstLink.reasons.length > 0);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

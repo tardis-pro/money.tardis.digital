@@ -32,3 +32,4 @@ This folder contains the Bloomberg-style terminal planning set requested for a 2
 - Sprint 5 baseline is actively implemented in code (backfill run-control dashboard and reconciliation APIs).
 - Sprint 6 baseline is actively implemented in code (source drift detection with reliability-oriented scoring).
 - Sprint 7 baseline is actively implemented in code (adjustment-aware market snapshot and breadth view API).
+- Sprint 8 baseline is actively implemented in code (entity-link diagnostics and explainable reason trails API).
