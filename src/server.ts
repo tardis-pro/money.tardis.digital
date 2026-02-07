@@ -35,6 +35,7 @@ import { RiskService } from "./services/risk.js";
 import { AnomalyV3Service } from "./services/anomaly-v3.js";
 import { ResearchService } from "./services/research.js";
 import { GovernanceHardeningService } from "./services/governance-hardening.js";
+import { SreService } from "./services/sre.js";
 
 async function terminalHtml(): Promise<string> {
   return readFile(path.join(process.cwd(), "public/terminal.html"), "utf8");
@@ -258,6 +259,21 @@ const runbookSchema = z.object({
   owner: z.string().min(1).max(64),
 });
 
+const sloSchema = z.object({
+  subsystem: z.string().min(2).max(80),
+  uptimeTarget: z.number().min(0).max(1),
+  p95LatencyMsTarget: z.number().int().positive().max(60_000),
+  errorBudgetPct: z.number().min(0).max(1),
+  owner: z.string().min(1).max(64),
+});
+
+const chaosSchema = z.object({
+  scenario: z.string().min(3).max(200),
+  result: z.enum(["pass", "fail"]),
+  mttrMinutes: z.number().int().min(0).max(10_000),
+  owner: z.string().min(1).max(64),
+});
+
 const backfillRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   status: z.enum(["running", "completed", "failed"]).optional(),
@@ -307,6 +323,7 @@ async function buildServer() {
   const anomalyV3 = new AnomalyV3Service(store);
   const research = new ResearchService(store);
   const governanceHardening = new GovernanceHardeningService(store);
+  const sre = new SreService(store);
 
   function requestUserId(request: { headers: Record<string, unknown> }): string {
     const header = request.headers["x-user-id"];
@@ -888,6 +905,54 @@ async function buildServer() {
       return access.response;
     }
     return governanceHardening.list("incident-runbook", 100);
+  });
+
+  app.post("/api/sre/slo-budgets", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = sloSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return sre.addSloBudget(parsed.data);
+  });
+
+  app.post("/api/sre/chaos-drills", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = chaosSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return sre.addChaosDrill(parsed.data);
+  });
+
+  app.get("/api/sre/slo-budgets", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return sre.list("slo-budget", 100);
+  });
+
+  app.get("/api/sre/chaos-drills", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return sre.list("chaos-drill", 100);
+  });
+
+  app.get("/api/sre/status", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return sre.status();
   });
 
   app.get("/api/watchlists", async (request, reply) => {

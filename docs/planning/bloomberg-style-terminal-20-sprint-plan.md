@@ -89,6 +89,11 @@ Scope: Build a Bloomberg-like policy and market intelligence terminal for India-
   - Incident runbook API added for formalized security/operational response procedures.
   - Runtime policy-check API added for entitlement/data-quality/governance status.
   - Remaining work for full Sprint 16 exits: CI/CD enforcement wiring and retention-policy automation.
+- Sprint 17 baseline implementation:
+  - SLO budget APIs added for subsystem-level reliability targets.
+  - Chaos drill APIs added with pass/fail and MTTR capture.
+  - SRE status API added for reliability budget and drill-compliance summary.
+  - Remaining work for full Sprint 17 exits: automated failover execution and cost-control telemetry.
 
 ## Delivery Structure
 

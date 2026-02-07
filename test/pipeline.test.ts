@@ -30,6 +30,7 @@ import { RiskService } from "../src/services/risk.js";
 import { AnomalyV3Service } from "../src/services/anomaly-v3.js";
 import { ResearchService } from "../src/services/research.js";
 import { GovernanceHardeningService } from "../src/services/governance-hardening.js";
+import { SreService } from "../src/services/sre.js";
 
 test("pipeline run creates explainable signals with audit records", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
@@ -952,6 +953,36 @@ test("governance hardening service stores release gates and runbooks with policy
 
     const gates = await service.list("release-gate", 10);
     assert.equal(gates.length, 1);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("sre service tracks slo budgets chaos drills and reliability status", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+    const service = new SreService(store);
+
+    await service.addSloBudget({
+      subsystem: "stream-bus",
+      uptimeTarget: 0.995,
+      p95LatencyMsTarget: 3000,
+      errorBudgetPct: 0.005,
+      owner: "sre-lead",
+    });
+    await service.addChaosDrill({
+      scenario: "Simulate stream node failure",
+      result: "pass",
+      mttrMinutes: 9,
+      owner: "sre-lead",
+    });
+
+    const status = await service.status();
+    assert.equal(status.sloCount, 1);
+    assert.equal(status.chaosDrills, 1);
+    assert.equal(status.chaosPassRate, 1);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

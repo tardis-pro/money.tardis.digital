@@ -34,6 +34,7 @@ Open `http://localhost:3000`.
 - Anomaly v3 APIs for analyst attribution overrides and calibration reports.
 - Research workflow APIs for notebooks, query templates, comments, and evidence packs.
 - Governance hardening APIs for release-gate evidence, runbooks, and policy checks.
+- SRE APIs for SLO budgets, chaos drill records, and reliability status summaries.
 - React + Framer Motion + Tailwind terminal UI with live Recharts dashboards.
 - Supply-chain graph view (direct + indirect links) with node-level production/demand/import/export/surplus metrics.
 - Alert generation with thresholding, dedupe behavior, and cooldown suppression.
@@ -90,6 +91,11 @@ Open `http://localhost:3000`.
 - `POST /api/governance/runbooks`
 - `GET /api/governance/runbooks`
 - `GET /api/governance/policy-checks`
+- `POST /api/sre/slo-budgets`
+- `GET /api/sre/slo-budgets`
+- `POST /api/sre/chaos-drills`
+- `GET /api/sre/chaos-drills`
+- `GET /api/sre/status`
 - `GET /api/supply-chain-graph`
 - `GET /api/alerts`
 - `POST /api/feedback`
