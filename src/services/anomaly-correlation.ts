@@ -51,6 +51,7 @@ export interface AnomalyCorrelationResult {
   ticker: string;
   source: "observations" | "outcomes";
   analyzedPoints: number;
+  clippedPoints: number;
   anomalies: CorrelatedAnomaly[];
 }
 
@@ -75,6 +76,18 @@ function seriesFromObservations(observations: PriceObservation[]): DataPoint[] {
     returns.push({ at: current.at, value: (current.close - prev.close) / denom });
   }
   return returns;
+}
+
+function winsorizeSeries(series: DataPoint[], cap: number = 0.5): { series: DataPoint[]; clippedPoints: number } {
+  let clippedPoints = 0;
+  const normalized = series.map((item) => {
+    const value = Math.max(-cap, Math.min(cap, item.value));
+    if (value !== item.value) {
+      clippedPoints += 1;
+    }
+    return { ...item, value };
+  });
+  return { series: normalized, clippedPoints };
 }
 
 function validateObservations(observations: PriceObservation[]): void {
@@ -188,6 +201,7 @@ export class AnomalyCorrelationService {
 
     let source: "observations" | "outcomes" = "outcomes";
     let series: DataPoint[] = [];
+    let clippedPoints = 0;
 
     if ((input.observations ?? []).length > 0) {
       validateObservations(input.observations ?? []);
@@ -208,6 +222,10 @@ export class AnomalyCorrelationService {
       }
       series = outcomesSeries.sort((a, b) => asTime(a.at) - asTime(b.at));
     }
+
+    const winsorized = winsorizeSeries(series);
+    series = winsorized.series;
+    clippedPoints = winsorized.clippedPoints;
 
     if (series.length <= windowSize) {
       throw new Error(`Need more points for anomaly detection. Have ${series.length}, need > ${windowSize}.`);
@@ -231,6 +249,7 @@ export class AnomalyCorrelationService {
       ticker,
       source,
       analyzedPoints: series.length,
+      clippedPoints,
       anomalies,
     };
   }
