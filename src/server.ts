@@ -421,7 +421,15 @@ async function buildServer() {
       : state.backfillRuns;
     return [...filtered]
       .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
-      .slice(0, limit);
+      .slice(0, limit)
+      .map((run) => {
+        const started = Date.parse(run.startedAt);
+        const completed = run.completedAt ? Date.parse(run.completedAt) : null;
+        const durationMs = Number.isFinite(started) && completed !== null && Number.isFinite(completed)
+          ? Math.max(0, completed - started)
+          : null;
+        return { ...run, durationMs };
+      });
   });
 
   app.post("/api/anomalies/correlate", async (request, reply) => {
