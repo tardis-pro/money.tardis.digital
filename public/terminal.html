@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>India Policy Signal Terminal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              display: ["Space Grotesk", "sans-serif"],
+              body: ["Manrope", "sans-serif"],
+            },
+            colors: {
+              night: "#060b15",
+              steel: "#111a2d",
+              signal: "#3dd6b5",
+              ember: "#ff9666",
+              cloud: "#9fb4d5",
+            },
+            boxShadow: {
+              glow: "0 0 0 1px rgba(61,214,181,0.24), 0 12px 48px rgba(3,10,22,0.65)",
+            },
+          },
+        },
+      };
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="min-h-screen bg-night font-body text-slate-100">
+    <div
+      class="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(61,214,181,0.16),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(100,149,237,0.14),transparent_40%),linear-gradient(180deg,#060b15_0%,#0a1325_55%,#060b15_100%)]"
+    ></div>
+    <div id="app" class="relative z-10"></div>
+
+    <script type="module">
+      import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.3.1";
+      import { createRoot } from "https://esm.sh/react-dom@18.3.1/client";
+      import { motion } from "https://esm.sh/framer-motion@11.11.10?external=react,react-dom";
+      import {
+        Area,
+        AreaChart,
+        Bar,
+        BarChart,
+        CartesianGrid,
+        Cell,
+        Legend,
+        Pie,
+        PieChart,
+        ResponsiveContainer,
+        Sankey,
+        Tooltip,
+        XAxis,
+        YAxis,
+      } from "https://esm.sh/recharts@2.12.7?external=react";
+      import htm from "https://esm.sh/htm@3.1.1";
+
+      const html = htm.bind(React.createElement);
+
+      async function fetchJSON(url, options) {
+        const response = await fetch(url, options);
+        if (!response.ok) {
+          throw new Error(`Request failed for ${url}: ${response.status}`);
+        }
+        return response.json();
+      }
+
+      function pct(value) {
+        return `${(value * 100).toFixed(1)}%`;
+      }
+
+      function severityColor(severity) {
+        if (severity === "high") return "#ff9666";
+        if (severity === "medium") return "#ffd369";
+        return "#7ab8ff";
+      }
+
+      function signalColor(direction) {
+        if (direction === "positive") return "text-emerald-300";
+        if (direction === "negative") return "text-orange-300";
+        return "text-slate-300";
+      }
+
+      function relationColor(relation) {
+        return relation === "direct" ? "#3dd6b5" : "#7ab8ff";
+      }
+
+      function App() {
+        const [loading, setLoading] = useState(true);
+        const [running, setRunning] = useState(false);
+        const [error, setError] = useState("");
+        const [signals, setSignals] = useState([]);
+        const [heatmap, setHeatmap] = useState([]);
+        const [alerts, setAlerts] = useState([]);
+        const [outcomes, setOutcomes] = useState({ total: 0, hitRate: 0, averageReturn: 0 });
+        const [supplyGraph, setSupplyGraph] = useState({ nodes: [], edges: [] });
+
+        const refresh = async () => {
+          try {
+            setError("");
+            const [signalsData, heatmapData, alertsData, outcomeData, supplyData] = await Promise.all([
+              fetchJSON("/api/signals?limit=40"),
+              fetchJSON("/api/heatmap"),
+              fetchJSON("/api/alerts"),
+              fetchJSON("/api/outcomes/summary"),
+              fetchJSON("/api/supply-chain-graph"),
+            ]);
+            setSignals(signalsData);
+            setHeatmap(heatmapData);
+            setAlerts(alertsData);
+            setOutcomes(outcomeData);
+            setSupplyGraph(supplyData);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : String(err));
+          } finally {
+            setLoading(false);
+          }
+        };
+
+        const runPipeline = async () => {
+          try {
+            setRunning(true);
+            await fetchJSON("/api/ingest/run", { method: "POST" });
+            await refresh();
+          } catch (err) {
+            setError(err instanceof Error ? err.message : String(err));
+          } finally {
+            setRunning(false);
+          }
+        };
+
+        useEffect(() => {
+          refresh();
+          const id = setInterval(refresh, 12000);
+          return () => clearInterval(id);
+        }, []);
+
+        const timelineData = useMemo(() => {
+          return [...signals]
+            .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+            .map((signal, index) => ({
+              idx: index + 1,
+              score: Number((signal.score * 100).toFixed(1)),
+              confidence: Number((signal.impact.confidence * 100).toFixed(1)),
+              title: signal.event.title,
+            }));
+        }, [signals]);
+
+        const sectorData = useMemo(() => {
+          return heatmap.slice(0, 8).map((item) => ({
+            sector: item.sector,
+            score: Number((item.weightedScore * 100).toFixed(1)),
+            signals: item.signalCount,
+          }));
+        }, [heatmap]);
+
+        const alertData = useMemo(() => {
+          const groups = { high: 0, medium: 0, low: 0 };
+          for (const alert of alerts.slice(0, 100)) {
+            groups[alert.severity] = (groups[alert.severity] ?? 0) + 1;
+          }
+          return [
+            { name: "High", value: groups.high, color: severityColor("high") },
+            { name: "Medium", value: groups.medium, color: severityColor("medium") },
+            { name: "Low", value: groups.low, color: severityColor("low") },
+          ];
+        }, [alerts]);
+
+        const supplySankeyData = useMemo(() => {
+          const nodes = (supplyGraph.nodes ?? []).slice(0, 12).map((node) => ({
+            name: `${node.ticker} (${node.sector})`,
+          }));
+          const nodeIndex = new Map(nodes.map((node, index) => [node.name.split(" ")[0], index]));
+          const links = (supplyGraph.edges ?? [])
+            .filter((edge) => nodeIndex.has(edge.from) && nodeIndex.has(edge.to))
+            .slice(0, 22)
+            .map((edge) => ({
+              source: nodeIndex.get(edge.from),
+              target: nodeIndex.get(edge.to),
+              value: Math.max(1, Math.round(edge.propagationScore * 100)),
+              relation: edge.relation,
+              confidence: edge.confidence,
+              score: edge.propagationScore,
+            }))
+            .filter((edge) => Number.isInteger(edge.source) && Number.isInteger(edge.target));
+
+          return {
+            nodes,
+            links,
+          };
+        }, [supplyGraph]);
+
+        const supplyFlowRows = useMemo(() => {
+          return (supplyGraph.nodes ?? [])
+            .slice(0, 10)
+            .map((node) => ({
+              ticker: node.ticker,
+              production: node.production ?? 0,
+              demand: node.demand ?? 0,
+              imports: node.imports ?? 0,
+              exports: node.exports ?? 0,
+              surplus: node.surplus ?? 0,
+            }));
+        }, [supplyGraph]);
+
+        return html`
+          <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+            <${motion.section}
+              initial=${{ opacity: 0, y: 20 }}
+              animate=${{ opacity: 1, y: 0 }}
+              transition=${{ duration: 0.45 }}
+              className="rounded-3xl border border-teal-200/15 bg-steel/75 p-6 shadow-glow backdrop-blur"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="font-display text-sm uppercase tracking-[0.24em] text-teal-300/80">India Macro-Market Intelligence</p>
+                  <h1 className="mt-2 font-display text-2xl text-white sm:text-3xl">Policy + Tender + News Signal Terminal</h1>
+                  <p className="mt-2 max-w-3xl text-sm text-cloud">
+                    Explainable signals, confidence-ranked alerts, paper-trading feedback loops, and auditable provenance.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick=${runPipeline}
+                    disabled=${running}
+                    className="rounded-xl border border-teal-300/40 bg-teal-400/10 px-4 py-2 text-sm font-semibold text-teal-200 transition hover:bg-teal-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    ${running ? "Running..." : "Run Pipeline"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick=${refresh}
+                    className="rounded-xl border border-slate-300/30 bg-slate-300/5 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-200/10"
+                  >
+                    Refresh
+                  </button>
+                </div>
+              </div>
+
+              ${error
+                ? html`<div className="mt-4 rounded-xl border border-red-300/40 bg-red-950/30 px-4 py-2 text-sm text-red-200">${error}</div>`
+                : null}
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-2xl border border-slate-200/10 bg-slate-900/50 p-4">
+                  <p className="text-xs uppercase tracking-wider text-cloud">Signals tracked</p>
+                  <p className="mt-1 text-2xl font-semibold text-white">${signals.length}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200/10 bg-slate-900/50 p-4">
+                  <p className="text-xs uppercase tracking-wider text-cloud">Active sectors</p>
+                  <p className="mt-1 text-2xl font-semibold text-white">${heatmap.length}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200/10 bg-slate-900/50 p-4">
+                  <p className="text-xs uppercase tracking-wider text-cloud">Supply-chain edges</p>
+                  <p className="mt-1 text-2xl font-semibold text-white">${(supplyGraph.edges ?? []).length}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200/10 bg-slate-900/50 p-4">
+                  <p className="text-xs uppercase tracking-wider text-cloud">Outcome hit-rate</p>
+                  <p className="mt-1 text-2xl font-semibold text-white">${pct(outcomes.hitRate ?? 0)}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200/10 bg-slate-900/50 p-4">
+                  <p className="text-xs uppercase tracking-wider text-cloud">Avg realized return</p>
+                  <p className="mt-1 text-2xl font-semibold text-white">${pct(outcomes.averageReturn ?? 0)}</p>
+                </div>
+              </div>
+            </${motion.section}>
+
+            <section className="mt-6 grid gap-4 xl:grid-cols-3">
+              <${motion.article}
+                initial=${{ opacity: 0, y: 18 }}
+                animate=${{ opacity: 1, y: 0 }}
+                transition=${{ delay: 0.1 }}
+                className="rounded-3xl border border-slate-200/10 bg-steel/60 p-4 xl:col-span-2"
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="font-display text-lg text-white">Signal Momentum</h2>
+                  <span className="text-xs text-cloud">scores vs confidence</span>
+                </div>
+                <div className="h-72">
+                  <${ResponsiveContainer} width="100%" height="100%">
+                    <${AreaChart} data=${timelineData} margin=${{ top: 10, right: 16, left: -16, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="scoreGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#3dd6b5" stopOpacity=${0.45} />
+                          <stop offset="95%" stopColor="#3dd6b5" stopOpacity=${0.02} />
+                        </linearGradient>
+                      </defs>
+                      <${CartesianGrid} strokeDasharray="3 3" stroke="#25304a" />
+                      <${XAxis} dataKey="idx" stroke="#9fb4d5" />
+                      <${YAxis} stroke="#9fb4d5" />
+                      <${Tooltip}
+                        contentStyle=${{ background: "#0f172a", border: "1px solid #334155", borderRadius: 12 }}
+                        labelStyle=${{ color: "#e2e8f0" }}
+                      />
+                      <${Legend} />
+                      <${Area} type="monotone" dataKey="score" stroke="#3dd6b5" fill="url(#scoreGradient)" strokeWidth=${2} />
+                      <${Area} type="monotone" dataKey="confidence" stroke="#7ab8ff" fillOpacity=${0} strokeWidth=${2} />
+                    </${AreaChart}>
+                  </${ResponsiveContainer}>
+                </div>
+              </${motion.article}>
+
+              <${motion.article}
+                initial=${{ opacity: 0, y: 18 }}
+                animate=${{ opacity: 1, y: 0 }}
+                transition=${{ delay: 0.14 }}
+                className="rounded-3xl border border-slate-200/10 bg-steel/60 p-4"
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="font-display text-lg text-white">Alert Mix</h2>
+                  <span className="text-xs text-cloud">last 100 alerts</span>
+                </div>
+                <div className="h-72">
+                  <${ResponsiveContainer} width="100%" height="100%">
+                    <${PieChart}>
+                      <${Pie} data=${alertData} innerRadius=${58} outerRadius=${94} dataKey="value" nameKey="name" paddingAngle=${3}>
+                        ${alertData.map(
+                          (item) => html`<${Cell} key=${item.name} fill=${item.color} />`,
+                        )}
+                      </${Pie}>
+                      <${Tooltip}
+                        contentStyle=${{ background: "#0f172a", border: "1px solid #334155", borderRadius: 12 }}
+                        formatter=${(value) => [value, "alerts"]}
+                      />
+                      <${Legend} />
+                    </${PieChart}>
+                  </${ResponsiveContainer}>
+                </div>
+              </${motion.article}>
+            </section>
+
+            <section className="mt-4 grid gap-4 xl:grid-cols-3">
+              <${motion.article}
+                initial=${{ opacity: 0, y: 18 }}
+                animate=${{ opacity: 1, y: 0 }}
+                transition=${{ delay: 0.18 }}
+                className="rounded-3xl border border-slate-200/10 bg-steel/60 p-4 xl:col-span-2"
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="font-display text-lg text-white">Sector Heatmap</h2>
+                  <span className="text-xs text-cloud">weighted score by sector</span>
+                </div>
+                <div className="h-72">
+                  <${ResponsiveContainer} width="100%" height="100%">
+                    <${BarChart} data=${sectorData} margin=${{ top: 8, right: 10, left: -20, bottom: 20 }}>
+                      <${CartesianGrid} strokeDasharray="3 3" stroke="#25304a" />
+                      <${XAxis} dataKey="sector" stroke="#9fb4d5" angle=${-20} textAnchor="end" interval=${0} />
+                      <${YAxis} stroke="#9fb4d5" />
+                      <${Tooltip}
+                        contentStyle=${{ background: "#0f172a", border: "1px solid #334155", borderRadius: 12 }}
+                        formatter=${(value, name) => [name === "score" ? `${value}%` : value, name]}
+                      />
+                      <${Bar} dataKey="score" fill="#3dd6b5" radius=${[8, 8, 0, 0]} />
+                    </${BarChart}>
+                  </${ResponsiveContainer}>
+                </div>
+              </${motion.article}>
+
+              <${motion.article}
+                initial=${{ opacity: 0, y: 18 }}
+                animate=${{ opacity: 1, y: 0 }}
+                transition=${{ delay: 0.22 }}
+                className="rounded-3xl border border-slate-200/10 bg-steel/60 p-4"
+              >
+                <h2 className="font-display text-lg text-white">Recent Alerts</h2>
+                <div className="mt-3 space-y-2">
+                  ${alerts.slice(0, 7).map(
+                    (alert) => html`
+                      <div className="rounded-xl border border-slate-200/10 bg-slate-900/40 px-3 py-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold" style=${{ color: severityColor(alert.severity) }}>
+                            ${alert.severity.toUpperCase()}
+                          </span>
+                          <span className="text-xs text-cloud">${new Date(alert.triggeredAt).toLocaleTimeString()}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-200">${alert.reason}</p>
+                      </div>
+                    `,
+                  )}
+                </div>
+              </${motion.article}>
+            </section>
+
+            <section className="mt-4 grid gap-4 xl:grid-cols-3">
+              <${motion.article}
+                initial=${{ opacity: 0, y: 18 }}
+                animate=${{ opacity: 1, y: 0 }}
+                transition=${{ delay: 0.16 }}
+                className="rounded-3xl border border-slate-200/10 bg-steel/60 p-4 xl:col-span-2"
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="font-display text-lg text-white">Supply Chain Graph (Direct + Indirect)</h2>
+                  <span className="text-xs text-cloud">HTS propagation score weighted links</span>
+                </div>
+                <div className="h-72">
+                  <${ResponsiveContainer} width="100%" height="100%">
+                    <${Sankey}
+                      data=${supplySankeyData}
+                      nodePadding=${24}
+                      margin=${{ top: 8, right: 20, left: 20, bottom: 8 }}
+                      linkCurvature=${0.5}
+                    >
+                      <${Tooltip}
+                        contentStyle=${{ background: "#0f172a", border: "1px solid #334155", borderRadius: 12 }}
+                        formatter=${(value, _name, item) => {
+                          const payload = item?.payload ?? {};
+                          if (payload.relation) {
+                            return [`${value}`, `${payload.relation} | confidence ${(payload.confidence * 100).toFixed(1)}%`];
+                          }
+                          return [value, "flow"];
+                        }}
+                      />
+                    </${Sankey}>
+                  </${ResponsiveContainer}>
+                </div>
+              </${motion.article}>
+
+              <${motion.article}
+                initial=${{ opacity: 0, y: 18 }}
+                animate=${{ opacity: 1, y: 0 }}
+                transition=${{ delay: 0.2 }}
+                className="rounded-3xl border border-slate-200/10 bg-steel/60 p-4"
+              >
+                <h2 className="font-display text-lg text-white">Propagation Links</h2>
+                <div className="mt-3 space-y-2">
+                  ${(supplyGraph.edges ?? []).slice(0, 8).map(
+                    (edge) => html`
+                      <div className="rounded-xl border border-slate-200/10 bg-slate-900/40 px-3 py-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-semibold" style=${{ color: relationColor(edge.relation) }}>${edge.relation.toUpperCase()}</span>
+                          <span className="text-cloud">lag ${edge.lag} | ${(edge.confidence * 100).toFixed(1)}%</span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-200">${edge.from} -> ${edge.to}</p>
+                        <p className="mt-1 text-[11px] text-cloud">${edge.channel} | score ${edge.propagationScore.toFixed(2)}</p>
+                      </div>
+                    `,
+                  )}
+                </div>
+              </${motion.article}>
+            </section>
+
+            <section className="mt-4 rounded-3xl border border-slate-200/10 bg-steel/60 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="font-display text-lg text-white">Supply Balance (Cities-Style)</h2>
+                <span className="text-xs text-cloud">production vs demand, imports and surplus</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-600/30 text-cloud">
+                      <th className="px-2 py-1 text-left">Ticker</th>
+                      <th className="px-2 py-1 text-right">Production</th>
+                      <th className="px-2 py-1 text-right">Demand</th>
+                      <th className="px-2 py-1 text-right">Imports</th>
+                      <th className="px-2 py-1 text-right">Exports</th>
+                      <th className="px-2 py-1 text-right">Surplus</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${supplyFlowRows.map(
+                      (row) => html`
+                        <tr className="border-b border-slate-700/30 text-slate-100">
+                          <td className="px-2 py-1 font-semibold">${row.ticker}</td>
+                          <td className="px-2 py-1 text-right">${row.production.toFixed(1)}</td>
+                          <td className="px-2 py-1 text-right">${row.demand.toFixed(1)}</td>
+                          <td className="px-2 py-1 text-right text-orange-300">${row.imports.toFixed(1)}</td>
+                          <td className="px-2 py-1 text-right text-emerald-300">${row.exports.toFixed(1)}</td>
+                          <td className="px-2 py-1 text-right ${row.surplus >= 0 ? "text-emerald-300" : "text-orange-300"}">
+                            ${row.surplus.toFixed(1)}
+                          </td>
+                        </tr>
+                      `,
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="mt-4 rounded-3xl border border-slate-200/10 bg-steel/60 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="font-display text-lg text-white">Top Explainable Signals</h2>
+                <span className="text-xs text-cloud">auto-refreshed every 12s</span>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                ${(loading ? [] : signals.slice(0, 9)).map(
+                  (signal, index) => html`
+                    <${motion.article}
+                      key=${signal.id}
+                      initial=${{ opacity: 0, y: 16 }}
+                      animate=${{ opacity: 1, y: 0 }}
+                      transition=${{ delay: 0.05 * index }}
+                      className="rounded-2xl border border-slate-200/10 bg-slate-900/45 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="text-sm font-semibold text-white">${signal.event.title}</h3>
+                        <span className="rounded-lg bg-teal-300/10 px-2 py-1 text-xs font-semibold text-teal-200">${pct(signal.score)}</span>
+                      </div>
+                      <p className="mt-2 text-xs ${signalColor(signal.impact.direction)}">
+                        ${signal.impact.direction.toUpperCase()} | ${signal.impact.horizon} | confidence ${pct(signal.impact.confidence)}
+                      </p>
+                      <p className="mt-2 line-clamp-3 text-xs text-cloud">${signal.event.evidenceSnippet}</p>
+                      <div className="mt-3 flex flex-wrap gap-1">
+                        ${signal.linkedEntities.slice(0, 3).map(
+                          (entity) => html`
+                            <span className="rounded-full border border-slate-200/20 px-2 py-0.5 text-[11px] text-slate-200">
+                              ${entity.ticker} ${pct(entity.confidence)}
+                            </span>
+                          `,
+                        )}
+                      </div>
+                    </${motion.article}>
+                  `,
+                )}
+              </div>
+            </section>
+          </main>
+        `;
+      }
+
+      const root = createRoot(document.getElementById("app"));
+      root.render(html`<${App} />`);
+    </script>
+  </body>
+</html>
