@@ -28,6 +28,7 @@ Open `http://localhost:3000`.
 - Entity-link diagnostics API with confidence coverage and explainable link-reason trails.
 - Charting workspace APIs for saved templates and event annotations by ticker.
 - Screening/discovery APIs for saved screens, reruns, change feed, and diagnostics.
+- Alert orchestration APIs for composite rule config, routing, and quality metrics.
 - React + Framer Motion + Tailwind terminal UI with live Recharts dashboards.
 - Supply-chain graph view (direct + indirect links) with node-level production/demand/import/export/surplus metrics.
 - Alert generation with thresholding, dedupe behavior, and cooldown suppression.
@@ -57,6 +58,10 @@ Open `http://localhost:3000`.
 - `POST /api/screens/:screenId/run`
 - `GET /api/discovery/feed?limit=50`
 - `GET /api/screens/:screenId/diagnostics`
+- `POST /api/alert-rules`
+- `GET /api/alert-rules`
+- `POST /api/alerts/route?limit=100`
+- `GET /api/alerts/quality`
 - `GET /api/supply-chain-graph`
 - `GET /api/alerts`
 - `POST /api/feedback`

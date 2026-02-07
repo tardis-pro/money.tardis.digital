@@ -1,6 +1,8 @@
 import path from "node:path";
 import type {
   AccessAuditRecord,
+  AlertDispatchRecord,
+  AlertRuleConfig,
   AlertRecord,
   AuditRecord,
   ChartTemplate,
@@ -45,6 +47,8 @@ export interface StateStore {
   screens: ScreenDefinition[];
   screenRuns: ScreenRun[];
   discoveryChanges: DiscoveryChangeRecord[];
+  alertRules: AlertRuleConfig[];
+  alertDispatches: AlertDispatchRecord[];
 }
 
 export interface Store {
@@ -78,6 +82,8 @@ function makeDefaultState(): StateStore {
     screens: [],
     screenRuns: [],
     discoveryChanges: [],
+    alertRules: [],
+    alertDispatches: [],
   };
 }
 
@@ -185,6 +191,8 @@ export class JsonStore implements Store {
       screens: loaded.screens ?? fallback.screens,
       screenRuns: loaded.screenRuns ?? fallback.screenRuns,
       discoveryChanges: loaded.discoveryChanges ?? fallback.discoveryChanges,
+      alertRules: loaded.alertRules ?? fallback.alertRules,
+      alertDispatches: loaded.alertDispatches ?? fallback.alertDispatches,
     };
   }
 

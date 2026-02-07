@@ -1,6 +1,8 @@
 import { Pool } from "pg";
 import type {
   AccessAuditRecord,
+  AlertDispatchRecord,
+  AlertRuleConfig,
   AlertRecord,
   AuditRecord,
   BackfillRunRecord,
@@ -45,6 +47,8 @@ const TABLES = [
   "screens",
   "screen_runs",
   "discovery_changes",
+  "alert_rules",
+  "alert_dispatches",
 ] as const;
 
 function rowPayload<T>(rows: Array<{ payload: T }>): T[] {
@@ -124,6 +128,12 @@ export class PostgresStore implements Store {
     await this.pool.query(
       "CREATE TABLE IF NOT EXISTS policy_signal.discovery_changes (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
     );
+    await this.pool.query(
+      "CREATE TABLE IF NOT EXISTS policy_signal.alert_rules (id text PRIMARY KEY, payload jsonb NOT NULL)",
+    );
+    await this.pool.query(
+      "CREATE TABLE IF NOT EXISTS policy_signal.alert_dispatches (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
+    );
 
     await this.pool.query("ALTER TABLE policy_signal.signals DROP CONSTRAINT IF EXISTS signals_pkey");
     await this.pool.query("ALTER TABLE policy_signal.events DROP CONSTRAINT IF EXISTS events_pkey");
@@ -184,6 +194,8 @@ export class PostgresStore implements Store {
       screens,
       screenRuns,
       discoveryChanges,
+      alertRules,
+      alertDispatches,
     ] =
       await Promise.all([
         this.pool.query<{ payload: SourceRegistryItem }>("SELECT payload FROM policy_signal.sources"),
@@ -211,6 +223,8 @@ export class PostgresStore implements Store {
         this.pool.query<{ payload: ScreenDefinition }>("SELECT payload FROM policy_signal.screens ORDER BY id ASC"),
         this.pool.query<{ payload: ScreenRun }>("SELECT payload FROM policy_signal.screen_runs ORDER BY ts DESC"),
         this.pool.query<{ payload: DiscoveryChangeRecord }>("SELECT payload FROM policy_signal.discovery_changes ORDER BY ts DESC"),
+        this.pool.query<{ payload: AlertRuleConfig }>("SELECT payload FROM policy_signal.alert_rules ORDER BY id ASC"),
+        this.pool.query<{ payload: AlertDispatchRecord }>("SELECT payload FROM policy_signal.alert_dispatches ORDER BY ts DESC"),
       ]);
 
     return {
@@ -235,6 +249,8 @@ export class PostgresStore implements Store {
       screens: rowPayload(screens.rows),
       screenRuns: rowPayload(screenRuns.rows),
       discoveryChanges: rowPayload(discoveryChanges.rows),
+      alertRules: rowPayload(alertRules.rows),
+      alertDispatches: rowPayload(alertDispatches.rows),
     };
   }
 
@@ -379,6 +395,19 @@ export class PostgresStore implements Store {
           change.id,
           change.createdAt,
           change,
+        ]);
+      }
+      for (const rule of state.alertRules) {
+        await client.query("INSERT INTO policy_signal.alert_rules (id, payload) VALUES ($1, $2)", [
+          rule.id,
+          rule,
+        ]);
+      }
+      for (const dispatch of state.alertDispatches) {
+        await client.query("INSERT INTO policy_signal.alert_dispatches (id, ts, payload) VALUES ($1, $2, $3)", [
+          dispatch.id,
+          dispatch.dispatchedAt,
+          dispatch,
         ]);
       }
       await client.query("COMMIT");

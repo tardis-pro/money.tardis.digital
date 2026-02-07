@@ -24,6 +24,7 @@ import { MarketSnapshotService } from "../src/services/market-snapshot.js";
 import { EntityLinkDiagnosticsService } from "../src/services/entity-link-diagnostics.js";
 import { ChartingService } from "../src/services/charting.js";
 import { ScreeningService } from "../src/services/screening.js";
+import { AlertOrchestratorService } from "../src/services/alert-orchestrator.js";
 
 test("pipeline run creates explainable signals with audit records", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
@@ -689,6 +690,66 @@ test("screening service supports saved screens, runs, discovery feed, and diagno
     const diag = await screening.diagnostics(screen.id);
     assert.ok(diag.totalRuns >= 1);
     assert.equal(diag.scheduled, true);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("alert orchestrator supports rule routing and quality metrics", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+
+    const registry = new SourceRegistryService(store);
+    const source = await registry.add({
+      id: "alert_test_source",
+      name: "Alert Test Source",
+      url: "data:text/plain,Policy incentive approved for heavy infrastructure funding",
+      format: "html",
+      parserType: "html",
+      pollingIntervalSeconds: 10,
+      reliabilityTier: "high",
+      licenseTag: "public",
+      enabled: true,
+    });
+
+    const pipeline = new SignalPipelineService(store);
+    await pipeline.run(source.id);
+
+    await store.transaction((state) => {
+      const signal = state.signals.find((item) => item.sourceId === source.id);
+      if (!signal) {
+        throw new Error("Expected signal for alert orchestrator test");
+      }
+      state.alerts.push({
+        id: makeId("alert"),
+        signalId: signal.id,
+        severity: "low",
+        reason: "Synthetic alert for orchestration routing",
+        triggeredAt: nowIso(),
+      });
+    });
+
+    const orchestrator = new AlertOrchestratorService(store);
+    await orchestrator.saveRule({
+      name: "High Score Critical Route",
+      watchlistId: null,
+      minScore: 0.35,
+      severity: "low",
+      cooldownMinutes: 10,
+      escalationMinutes: 1,
+      suppressionWindowMinutes: 0,
+      channels: ["terminal", "email"],
+      ownerUserId: "demo-analyst",
+    });
+
+    const dispatches = await orchestrator.routeAlerts(30);
+    assert.ok(dispatches.length >= 1);
+
+    const quality = await orchestrator.quality();
+    assert.ok(quality.totalAlerts >= 1);
+    assert.ok(quality.dispatches >= 1);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

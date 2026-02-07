@@ -29,6 +29,7 @@ import { MarketSnapshotService } from "./services/market-snapshot.js";
 import { EntityLinkDiagnosticsService } from "./services/entity-link-diagnostics.js";
 import { ChartingService } from "./services/charting.js";
 import { ScreeningService } from "./services/screening.js";
+import { AlertOrchestratorService } from "./services/alert-orchestrator.js";
 
 async function terminalHtml(): Promise<string> {
   return readFile(path.join(process.cwd(), "public/terminal.html"), "utf8");
@@ -161,6 +162,22 @@ const discoveryFeedQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
 });
 
+const alertRuleCreateSchema = z.object({
+  name: z.string().min(2).max(80),
+  watchlistId: z.string().min(1).max(64).nullable(),
+  minScore: z.number().min(0).max(1),
+  severity: z.enum(["low", "medium", "high"]),
+  cooldownMinutes: z.number().int().min(1).max(240),
+  escalationMinutes: z.number().int().min(1).max(1_440),
+  suppressionWindowMinutes: z.number().int().min(0).max(1_440),
+  channels: z.array(z.enum(["terminal", "email", "webhook"])).min(1).max(3),
+  ownerUserId: z.string().min(1).max(64),
+});
+
+const alertRouteQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(300).optional(),
+});
+
 const backfillRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   status: z.enum(["running", "completed", "failed"]).optional(),
@@ -204,6 +221,7 @@ async function buildServer() {
   const entityLinkDiagnostics = new EntityLinkDiagnosticsService(store);
   const charting = new ChartingService(store);
   const screening = new ScreeningService(store);
+  const alertOrchestrator = new AlertOrchestratorService(store);
 
   function requestUserId(request: { headers: Record<string, unknown> }): string {
     const header = request.headers["x-user-id"];
@@ -474,6 +492,46 @@ async function buildServer() {
     } catch (error) {
       return reply.code(404).send({ error: String(error) });
     }
+  });
+
+  app.post("/api/alert-rules", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "alerts");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = alertRuleCreateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return alertOrchestrator.saveRule(parsed.data);
+  });
+
+  app.get("/api/alert-rules", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "alerts");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return alertOrchestrator.listRules();
+  });
+
+  app.post("/api/alerts/route", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "alerts");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = alertRouteQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return alertOrchestrator.routeAlerts(parsed.data.limit ?? 100);
+  });
+
+  app.get("/api/alerts/quality", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "alerts");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return alertOrchestrator.quality();
   });
 
   app.get("/api/watchlists", async (request, reply) => {

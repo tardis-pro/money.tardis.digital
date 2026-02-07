@@ -417,3 +417,39 @@ export interface DiscoveryChangeRecord {
   score: number;
   createdAt: string;
 }
+
+export interface AlertRuleConfig {
+  id: string;
+  name: string;
+  watchlistId: string | null;
+  minScore: number;
+  severity: AlertRecord["severity"];
+  cooldownMinutes: number;
+  escalationMinutes: number;
+  suppressionWindowMinutes: number;
+  channels: Array<"terminal" | "email" | "webhook">;
+  ownerUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AlertDispatchRecord {
+  id: string;
+  alertId: string;
+  ruleId: string;
+  userId: string;
+  channel: "terminal" | "email" | "webhook";
+  status: "delivered" | "suppressed" | "escalated";
+  reason: string;
+  dispatchedAt: string;
+}
+
+export interface AlertQualitySnapshot {
+  generatedAt: string;
+  totalAlerts: number;
+  dispatches: number;
+  suppressed: number;
+  escalated: number;
+  duplicateRate: number;
+  avgDispatchPerAlert: number;
+}

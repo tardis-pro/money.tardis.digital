@@ -59,6 +59,11 @@ Scope: Build a Bloomberg-like policy and market intelligence terminal for India-
   - Screen run orchestration added with ranked top-ticker outputs and rerunnable execution.
   - Discovery feed and screen diagnostics APIs added for explainable "what changed" monitoring.
   - Remaining work for full Sprint 10 exits: scheduled runner daemon and SLA instrumentation.
+- Sprint 11 baseline implementation:
+  - Alert rule orchestration APIs added with dedupe/cooldown/escalation parameters.
+  - Alert routing execution API added for per-rule multi-channel dispatching.
+  - Alert quality metrics API added for duplicate/suppression/escalation visibility.
+  - Remaining work for full Sprint 11 exits: user/watchlist-targeted routing matrix and richer anomaly-policy composites.
 
 ## Delivery Structure
 
