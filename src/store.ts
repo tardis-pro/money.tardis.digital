@@ -16,6 +16,7 @@ import type {
   BackfillRunRecord,
   OutcomeRecord,
   PortfolioRecord,
+  ProgramRecord,
   RawArtifact,
   RiskPolicy,
   RiskSnapshot,
@@ -59,6 +60,7 @@ export interface StateStore {
   riskPolicies: RiskPolicy[];
   riskSnapshots: RiskSnapshot[];
   attributionOverrides: AttributionOverride[];
+  programRecords: ProgramRecord[];
 }
 
 export interface Store {
@@ -99,6 +101,7 @@ function makeDefaultState(): StateStore {
     riskPolicies: [],
     riskSnapshots: [],
     attributionOverrides: [],
+    programRecords: [],
   };
 }
 
@@ -213,6 +216,7 @@ export class JsonStore implements Store {
       riskPolicies: loaded.riskPolicies ?? fallback.riskPolicies,
       riskSnapshots: loaded.riskSnapshots ?? fallback.riskSnapshots,
       attributionOverrides: loaded.attributionOverrides ?? fallback.attributionOverrides,
+      programRecords: loaded.programRecords ?? fallback.programRecords,
     };
   }
 

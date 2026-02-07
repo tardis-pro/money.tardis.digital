@@ -33,6 +33,7 @@ import { AlertOrchestratorService } from "./services/alert-orchestrator.js";
 import { PortfolioService } from "./services/portfolio.js";
 import { RiskService } from "./services/risk.js";
 import { AnomalyV3Service } from "./services/anomaly-v3.js";
+import { ResearchService } from "./services/research.js";
 
 async function terminalHtml(): Promise<string> {
   return readFile(path.join(process.cwd(), "public/terminal.html"), "utf8");
@@ -224,6 +225,25 @@ const anomalyOverridesQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
 });
 
+const notebookSchema = z.object({
+  page: z.string().min(1).max(80),
+  title: z.string().min(2).max(120),
+  content: z.string().min(5).max(20_000),
+  author: z.string().min(1).max(64),
+});
+
+const queryTemplateSchema = z.object({
+  name: z.string().min(2).max(120),
+  command: z.string().min(2).max(500),
+  owner: z.string().min(1).max(64),
+});
+
+const artifactCommentSchema = z.object({
+  artifactId: z.string().min(1).max(120),
+  comment: z.string().min(2).max(2_000),
+  author: z.string().min(1).max(64),
+});
+
 const backfillRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   status: z.enum(["running", "completed", "failed"]).optional(),
@@ -271,6 +291,7 @@ async function buildServer() {
   const portfolio = new PortfolioService(store);
   const risk = new RiskService(store);
   const anomalyV3 = new AnomalyV3Service(store);
+  const research = new ResearchService(store);
 
   function requestUserId(request: { headers: Record<string, unknown> }): string {
     const header = request.headers["x-user-id"];
@@ -739,6 +760,71 @@ async function buildServer() {
       return access.response;
     }
     return anomalyV3.calibration();
+  });
+
+  app.post("/api/research/notebooks", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = notebookSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return research.saveNotebook(parsed.data);
+  });
+
+  app.get("/api/research/notebooks", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return research.list("notebook", 100);
+  });
+
+  app.post("/api/research/query-templates", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = queryTemplateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return research.saveQueryTemplate(parsed.data);
+  });
+
+  app.get("/api/research/query-templates", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return research.list("query-template", 100);
+  });
+
+  app.post("/api/research/comments", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = artifactCommentSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return research.addComment(parsed.data);
+  });
+
+  app.post("/api/research/evidence-pack/:signalId", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const { signalId } = request.params as { signalId: string };
+    try {
+      return await research.evidencePack(signalId);
+    } catch (error) {
+      return reply.code(404).send({ error: String(error) });
+    }
   });
 
   app.get("/api/watchlists", async (request, reply) => {

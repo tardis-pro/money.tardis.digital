@@ -543,3 +543,27 @@ export interface AttributionCalibrationReport {
   meanAbsoluteError: number;
   points: AttributionCalibrationPoint[];
 }
+
+export interface ProgramRecord {
+  id: string;
+  kind:
+    | "notebook"
+    | "query-template"
+    | "evidence-pack"
+    | "comment"
+    | "release-gate"
+    | "incident-runbook"
+    | "slo-budget"
+    | "chaos-drill"
+    | "macro"
+    | "workspace-preset"
+    | "onboarding-metric"
+    | "pilot-scorecard"
+    | "defect"
+    | "launch-checklist"
+    | "ops-cadence";
+  key: string;
+  payload: Record<string, string | number | boolean | null | string[] | number[]>;
+  createdAt: string;
+  updatedAt: string;
+}

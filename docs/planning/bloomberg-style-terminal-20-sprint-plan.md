@@ -79,6 +79,11 @@ Scope: Build a Bloomberg-like policy and market intelligence terminal for India-
   - Calibration report API added with bucketed predicted-vs-observed quality points.
   - Override history API added to feed retraining and governance evidence.
   - Remaining work for full Sprint 14 exits: multi-model blending and benchmark harness automation.
+- Sprint 15 baseline implementation:
+  - Research notebook APIs added for saving and listing desk analysis notes by terminal page.
+  - Query template APIs added for command-driven reusable research execution.
+  - Evidence pack and comment APIs added for review-ready traceability artifacts.
+  - Remaining work for full Sprint 15 exits: richer permissioning and notebook collaboration UX layer.
 
 ## Delivery Structure
 

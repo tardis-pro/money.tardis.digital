@@ -16,6 +16,7 @@ import type {
   GovernanceChangeRecord,
   OutcomeRecord,
   PortfolioRecord,
+  ProgramRecord,
   RawArtifact,
   RiskPolicy,
   RiskSnapshot,
@@ -59,6 +60,7 @@ const TABLES = [
   "risk_policies",
   "risk_snapshots",
   "attribution_overrides",
+  "program_records",
 ] as const;
 
 function rowPayload<T>(rows: Array<{ payload: T }>): T[] {
@@ -159,6 +161,9 @@ export class PostgresStore implements Store {
     await this.pool.query(
       "CREATE TABLE IF NOT EXISTS policy_signal.attribution_overrides (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
     );
+    await this.pool.query(
+      "CREATE TABLE IF NOT EXISTS policy_signal.program_records (id text PRIMARY KEY, ts timestamptz NOT NULL, payload jsonb NOT NULL)",
+    );
 
     await this.pool.query("ALTER TABLE policy_signal.signals DROP CONSTRAINT IF EXISTS signals_pkey");
     await this.pool.query("ALTER TABLE policy_signal.events DROP CONSTRAINT IF EXISTS events_pkey");
@@ -226,6 +231,7 @@ export class PostgresStore implements Store {
       riskPolicies,
       riskSnapshots,
       attributionOverrides,
+      programRecords,
     ] =
       await Promise.all([
         this.pool.query<{ payload: SourceRegistryItem }>("SELECT payload FROM policy_signal.sources"),
@@ -260,6 +266,7 @@ export class PostgresStore implements Store {
         this.pool.query<{ payload: RiskPolicy }>("SELECT payload FROM policy_signal.risk_policies ORDER BY id ASC"),
         this.pool.query<{ payload: RiskSnapshot }>("SELECT payload FROM policy_signal.risk_snapshots ORDER BY ts DESC"),
         this.pool.query<{ payload: AttributionOverride }>("SELECT payload FROM policy_signal.attribution_overrides ORDER BY ts DESC"),
+        this.pool.query<{ payload: ProgramRecord }>("SELECT payload FROM policy_signal.program_records ORDER BY ts DESC"),
       ]);
 
     return {
@@ -291,6 +298,7 @@ export class PostgresStore implements Store {
       riskPolicies: rowPayload(riskPolicies.rows),
       riskSnapshots: rowPayload(riskSnapshots.rows),
       attributionOverrides: rowPayload(attributionOverrides.rows),
+      programRecords: rowPayload(programRecords.rows),
     };
   }
 
@@ -481,6 +489,13 @@ export class PostgresStore implements Store {
           override.id,
           override.createdAt,
           override,
+        ]);
+      }
+      for (const record of state.programRecords) {
+        await client.query("INSERT INTO policy_signal.program_records (id, ts, payload) VALUES ($1, $2, $3)", [
+          record.id,
+          record.createdAt,
+          record,
         ]);
       }
       await client.query("COMMIT");

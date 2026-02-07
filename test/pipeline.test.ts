@@ -28,6 +28,7 @@ import { AlertOrchestratorService } from "../src/services/alert-orchestrator.js"
 import { PortfolioService } from "../src/services/portfolio.js";
 import { RiskService } from "../src/services/risk.js";
 import { AnomalyV3Service } from "../src/services/anomaly-v3.js";
+import { ResearchService } from "../src/services/research.js";
 
 test("pipeline run creates explainable signals with audit records", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
@@ -878,6 +879,46 @@ test("anomaly v3 service supports overrides and calibration reporting", async ()
     const report = await service.calibration();
     assert.equal(report.points.length, 5);
     assert.ok(report.meanAbsoluteError >= 0);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("research service stores notebooks templates comments and evidence packs", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+    const pipeline = new SignalPipelineService(store);
+    await pipeline.run();
+    const state = await store.read();
+    const signal = state.signals[0];
+    assert.ok(signal);
+
+    const research = new ResearchService(store);
+    await research.saveNotebook({
+      page: "signals",
+      title: "Policy Event Notes",
+      content: "Tracking policy momentum and linked entities.",
+      author: "demo-analyst",
+    });
+    await research.saveQueryTemplate({
+      name: "high-signal-policy",
+      command: "signals --min-score 0.6 --tag policy",
+      owner: "demo-analyst",
+    });
+    await research.addComment({
+      artifactId: "artifact-1",
+      comment: "Need verification from ministry bulletin.",
+      author: "demo-analyst",
+    });
+    const pack = await research.evidencePack(signal!.id);
+    assert.equal(pack.kind, "evidence-pack");
+
+    const notebooks = await research.list("notebook", 10);
+    assert.equal(notebooks.length, 1);
+    const templates = await research.list("query-template", 10);
+    assert.equal(templates.length, 1);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
