@@ -50,6 +50,10 @@ Scope: Build a Bloomberg-like policy and market intelligence terminal for India-
   - Entity-link diagnostics API added with coverage, confidence metrics, and top-link reason trails.
   - Explainable "why linked" traces are now queryable as structured diagnostics data.
   - Remaining work for full Sprint 8 exits: expanded entity graph coverage and threshold-governed precision benchmarks.
+- Sprint 9 baseline implementation:
+  - Chart template APIs added for saving and retrieving multi-timeframe chart setups.
+  - Chart annotation API added to expose signal-event markers for ticker-focused chart overlays.
+  - Remaining work for full Sprint 9 exits: synchronized crosshair linked panes and advanced study rendering controls.
 
 ## Delivery Structure
 

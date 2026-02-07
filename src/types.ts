@@ -359,3 +359,24 @@ export interface EntityLinkDiagnostics {
     reasons: string[];
   }>;
 }
+
+export interface ChartTemplate {
+  id: string;
+  name: string;
+  ticker: string;
+  timeframe: "intraday" | "1D" | "1W";
+  overlays: string[];
+  studies: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChartAnnotation {
+  signalId: string;
+  ticker: string;
+  at: string;
+  title: string;
+  score: number;
+  direction: Direction;
+  confidence: number;
+}

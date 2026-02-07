@@ -4,6 +4,7 @@ import type {
   AlertRecord,
   AuditRecord,
   CommandLogRecord,
+  ChartTemplate,
   DataQualityIssue,
   EventRecord,
   FeedbackRecord,
@@ -37,6 +38,7 @@ export interface StateStore {
   accessAudits: AccessAuditRecord[];
   streamEvents: StreamEventRecord[];
   streamSequence: number;
+  chartTemplates: ChartTemplate[];
 }
 
 export interface Store {
@@ -66,6 +68,7 @@ function makeDefaultState(): StateStore {
     accessAudits: [],
     streamEvents: [],
     streamSequence: 0,
+    chartTemplates: [],
   };
 }
 
@@ -169,6 +172,7 @@ export class JsonStore implements Store {
       accessAudits: loaded.accessAudits ?? fallback.accessAudits,
       streamEvents: loaded.streamEvents ?? fallback.streamEvents,
       streamSequence: loaded.streamSequence ?? fallback.streamSequence,
+      chartTemplates: loaded.chartTemplates ?? fallback.chartTemplates,
     };
   }
 

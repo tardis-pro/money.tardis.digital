@@ -4,6 +4,7 @@ import type {
   AlertRecord,
   AuditRecord,
   BackfillRunRecord,
+  ChartTemplate,
   CommandLogRecord,
   DataQualityIssue,
   EventRecord,
@@ -37,6 +38,7 @@ const TABLES = [
   "access_audits",
   "stream_events",
   "stream_state",
+  "chart_templates",
 ] as const;
 
 function rowPayload<T>(rows: Array<{ payload: T }>): T[] {
@@ -104,6 +106,9 @@ export class PostgresStore implements Store {
     await this.pool.query(
       "CREATE TABLE IF NOT EXISTS policy_signal.stream_state (id text PRIMARY KEY, payload jsonb NOT NULL)",
     );
+    await this.pool.query(
+      "CREATE TABLE IF NOT EXISTS policy_signal.chart_templates (id text PRIMARY KEY, payload jsonb NOT NULL)",
+    );
 
     await this.pool.query("ALTER TABLE policy_signal.signals DROP CONSTRAINT IF EXISTS signals_pkey");
     await this.pool.query("ALTER TABLE policy_signal.events DROP CONSTRAINT IF EXISTS events_pkey");
@@ -160,6 +165,7 @@ export class PostgresStore implements Store {
       accessAudits,
       streamEvents,
       streamState,
+      chartTemplates,
     ] =
       await Promise.all([
         this.pool.query<{ payload: SourceRegistryItem }>("SELECT payload FROM policy_signal.sources"),
@@ -183,6 +189,7 @@ export class PostgresStore implements Store {
         this.pool.query<{ payload: AccessAuditRecord }>("SELECT payload FROM policy_signal.access_audits ORDER BY ts DESC"),
         this.pool.query<{ payload: StreamEventRecord }>("SELECT payload FROM policy_signal.stream_events ORDER BY ts DESC"),
         this.pool.query<{ payload: { streamSequence: number } }>("SELECT payload FROM policy_signal.stream_state WHERE id = 'singleton'"),
+        this.pool.query<{ payload: ChartTemplate }>("SELECT payload FROM policy_signal.chart_templates ORDER BY id ASC"),
       ]);
 
     return {
@@ -203,6 +210,7 @@ export class PostgresStore implements Store {
       accessAudits: rowPayload(accessAudits.rows),
       streamEvents: rowPayload(streamEvents.rows),
       streamSequence: streamState.rows[0]?.payload.streamSequence ?? 0,
+      chartTemplates: rowPayload(chartTemplates.rows),
     };
   }
 
@@ -323,6 +331,12 @@ export class PostgresStore implements Store {
       await client.query("INSERT INTO policy_signal.stream_state (id, payload) VALUES ('singleton', $1)", [
         { streamSequence: state.streamSequence },
       ]);
+      for (const template of state.chartTemplates) {
+        await client.query("INSERT INTO policy_signal.chart_templates (id, payload) VALUES ($1, $2)", [
+          template.id,
+          template,
+        ]);
+      }
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");

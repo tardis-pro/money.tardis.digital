@@ -26,6 +26,7 @@ Open `http://localhost:3000`.
 - Source drift detection API with freshness/fallback/confidence signals for reliability operations.
 - Market snapshot API with adjustment-aware price and breadth metrics.
 - Entity-link diagnostics API with confidence coverage and explainable link-reason trails.
+- Charting workspace APIs for saved templates and event annotations by ticker.
 - React + Framer Motion + Tailwind terminal UI with live Recharts dashboards.
 - Supply-chain graph view (direct + indirect links) with node-level production/demand/import/export/surplus metrics.
 - Alert generation with thresholding, dedupe behavior, and cooldown suppression.
@@ -47,6 +48,9 @@ Open `http://localhost:3000`.
 - `GET /api/heatmap`
 - `GET /api/market/snapshots?limit=50`
 - `GET /api/entity-links/diagnostics?limit=10`
+- `POST /api/chart/templates`
+- `GET /api/chart/templates`
+- `GET /api/chart/annotations?ticker=SBIN&limit=25`
 - `GET /api/supply-chain-graph`
 - `GET /api/alerts`
 - `POST /api/feedback`

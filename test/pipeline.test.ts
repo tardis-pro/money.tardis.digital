@@ -22,6 +22,7 @@ import { makeId, nowIso } from "../src/utils.js";
 import { SourceDriftService } from "../src/services/source-drift.js";
 import { MarketSnapshotService } from "../src/services/market-snapshot.js";
 import { EntityLinkDiagnosticsService } from "../src/services/entity-link-diagnostics.js";
+import { ChartingService } from "../src/services/charting.js";
 
 test("pipeline run creates explainable signals with audit records", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
@@ -622,6 +623,35 @@ test("entity link diagnostics returns coverage and explainable reason trails", a
     const firstLink = result.topEntityLinks[0];
     assert.ok(firstLink);
     assert.ok(firstLink.reasons.length > 0);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("charting service stores templates and emits ticker annotations", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "signal-terminal-"));
+  try {
+    const store = new JsonStore(tmpDir);
+    await store.init();
+    const pipeline = new SignalPipelineService(store);
+    await pipeline.run();
+
+    const charting = new ChartingService(store);
+    const template = await charting.saveTemplate({
+      name: "SBIN Intraday Momentum",
+      ticker: "SBIN",
+      timeframe: "intraday",
+      overlays: ["ema20", "vwap"],
+      studies: ["rsi", "macd"],
+    });
+    assert.equal(template.ticker, "SBIN");
+
+    const templates = await charting.templates();
+    assert.ok(templates.length >= 1);
+
+    const annotations = await charting.annotations("SBIN", 10);
+    assert.ok(annotations.length >= 1);
+    assert.ok(annotations.every((row) => row.ticker === "SBIN"));
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

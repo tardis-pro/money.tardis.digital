@@ -27,6 +27,7 @@ import { BackfillControlService } from "./services/backfill-control.js";
 import { SourceDriftService } from "./services/source-drift.js";
 import { MarketSnapshotService } from "./services/market-snapshot.js";
 import { EntityLinkDiagnosticsService } from "./services/entity-link-diagnostics.js";
+import { ChartingService } from "./services/charting.js";
 
 async function terminalHtml(): Promise<string> {
   return readFile(path.join(process.cwd(), "public/terminal.html"), "utf8");
@@ -130,6 +131,19 @@ const entityLinkDiagnosticsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(50).optional(),
 });
 
+const chartTemplateInputSchema = z.object({
+  name: z.string().min(2).max(80),
+  ticker: z.string().min(1).max(24),
+  timeframe: z.enum(["intraday", "1D", "1W"]),
+  overlays: z.array(z.string().min(1).max(40)).max(12),
+  studies: z.array(z.string().min(1).max(40)).max(12),
+});
+
+const chartAnnotationsQuerySchema = z.object({
+  ticker: z.string().min(1),
+  limit: z.coerce.number().int().positive().max(200).optional(),
+});
+
 const backfillRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   status: z.enum(["running", "completed", "failed"]).optional(),
@@ -171,6 +185,7 @@ async function buildServer() {
   const sourceDrift = new SourceDriftService(store);
   const marketSnapshot = new MarketSnapshotService(store);
   const entityLinkDiagnostics = new EntityLinkDiagnosticsService(store);
+  const charting = new ChartingService(store);
 
   function requestUserId(request: { headers: Record<string, unknown> }): string {
     const header = request.headers["x-user-id"];
@@ -351,6 +366,38 @@ async function buildServer() {
       return reply.code(400).send({ error: parsed.error.issues });
     }
     return entityLinkDiagnostics.summary(parsed.data.limit ?? 10);
+  });
+
+  app.post("/api/chart/templates", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = chartTemplateInputSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return charting.saveTemplate(parsed.data);
+  });
+
+  app.get("/api/chart/templates", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
+    return charting.templates();
+  });
+
+  app.get("/api/chart/annotations", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "signals");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const parsed = chartAnnotationsQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    return charting.annotations(parsed.data.ticker, parsed.data.limit ?? 25);
   });
 
   app.get("/api/watchlists", async (request, reply) => {
