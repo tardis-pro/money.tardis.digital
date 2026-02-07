@@ -1,0 +1,68 @@
+[
+  {
+    "id": "pib_press",
+    "name": "PIB Press Releases",
+    "url": "https://www.pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=1",
+    "format": "rss",
+    "parserType": "rss",
+    "pollingIntervalSeconds": 300,
+    "reliabilityTier": "high",
+    "licenseTag": "public",
+    "enabled": true
+  },
+  {
+    "id": "rbi_circulars",
+    "name": "RBI Notifications",
+    "url": "https://www.rbi.org.in/Scripts/NotificationUser.aspx",
+    "format": "html",
+    "parserType": "html",
+    "pollingIntervalSeconds": 600,
+    "reliabilityTier": "high",
+    "licenseTag": "public",
+    "enabled": true
+  },
+  {
+    "id": "nse_announcements",
+    "name": "NSE Corporate Announcements",
+    "url": "https://www.nseindia.com/companies-listing/corporate-filings-announcements",
+    "format": "html",
+    "parserType": "html",
+    "pollingIntervalSeconds": 180,
+    "reliabilityTier": "high",
+    "licenseTag": "public",
+    "enabled": true
+  },
+  {
+    "id": "cppp_tenders",
+    "name": "CPPP eProcure",
+    "url": "https://eprocure.gov.in/eprocure/app",
+    "format": "html",
+    "parserType": "html",
+    "pollingIntervalSeconds": 900,
+    "reliabilityTier": "medium",
+    "licenseTag": "public",
+    "enabled": true
+  },
+  {
+    "id": "businessline_rss",
+    "name": "BusinessLine RSS",
+    "url": "https://www.thehindubusinessline.com/feeder/default.rss",
+    "format": "rss",
+    "parserType": "rss",
+    "pollingIntervalSeconds": 300,
+    "reliabilityTier": "medium",
+    "licenseTag": "publisher-rss",
+    "enabled": true
+  },
+  {
+    "id": "screenipy_nifty50",
+    "name": "Screeni-py Nifty 50 Scan",
+    "url": "https://screeni-py.local/run?tickerOption=1&executeOption=0",
+    "format": "screenipy",
+    "parserType": "screenipy",
+    "pollingIntervalSeconds": 1800,
+    "reliabilityTier": "medium",
+    "licenseTag": "screenipy-cli",
+    "enabled": false
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "ticker": "HAL",
+    "sector": "defense",
+    "ministry": "Ministry of Defence",
+    "keywords": ["defence", "defense", "aircraft", "fighter", "aerospace", "hal"]
+  },
+  {
+    "ticker": "BEL",
+    "sector": "defense",
+    "ministry": "Ministry of Defence",
+    "keywords": ["radar", "electronics", "bel", "defence", "defense", "missile"]
+  },
+  {
+    "ticker": "IRCTC",
+    "sector": "railways",
+    "ministry": "Ministry of Railways",
+    "keywords": ["rail", "railway", "coach", "locomotive", "irctc", "station"]
+  },
+  {
+    "ticker": "IRFC",
+    "sector": "railways",
+    "ministry": "Ministry of Railways",
+    "keywords": ["rail", "rolling stock", "irfc", "lease", "railway finance"]
+  },
+  {
+    "ticker": "NTPC",
+    "sector": "power",
+    "ministry": "Ministry of Power",
+    "keywords": ["power", "generation", "thermal", "renewable", "ntpc", "electricity"]
+  },
+  {
+    "ticker": "PFC",
+    "sector": "power",
+    "ministry": "Ministry of Power",
+    "keywords": ["power finance", "transmission", "grid", "pfc", "discom"]
+  },
+  {
+    "ticker": "SBIN",
+    "sector": "bfsi",
+    "ministry": null,
+    "keywords": ["bank", "credit", "lending", "sbi", "deposit", "rbi circular"]
+  },
+  {
+    "ticker": "HDFCBANK",
+    "sector": "bfsi",
+    "ministry": null,
+    "keywords": ["bank", "hdfc", "credit card", "loan", "interest rate"]
+  },
+  {
+    "ticker": "LT",
+    "sector": "infra",
+    "ministry": null,
+    "keywords": ["infrastructure", "epc", "construction", "tender", "larsen", "lt"]
+  },
+  {
+    "ticker": "RVNL",
+    "sector": "infra",
+    "ministry": "Ministry of Railways",
+    "keywords": ["rail project", "rvnl", "epc", "order win", "railway tender"]
+  }
+]

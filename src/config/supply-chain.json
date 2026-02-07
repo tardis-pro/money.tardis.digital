@@ -1,0 +1,74 @@
+[
+  {
+    "from": "HAL",
+    "to": "BEL",
+    "channel": "defense-electronics",
+    "confidence": 0.82,
+    "lag": 1,
+    "businessGroupFrom": "Defense Public Sector",
+    "businessGroupTo": "Defense Public Sector"
+  },
+  {
+    "from": "IRFC",
+    "to": "RVNL",
+    "channel": "rail-financing",
+    "confidence": 0.79,
+    "lag": 2,
+    "businessGroupFrom": "Rail PSU",
+    "businessGroupTo": "Rail PSU"
+  },
+  {
+    "from": "RVNL",
+    "to": "IRCTC",
+    "channel": "rail-capacity",
+    "confidence": 0.66,
+    "lag": 2,
+    "businessGroupFrom": "Rail PSU",
+    "businessGroupTo": "Rail PSU"
+  },
+  {
+    "from": "NTPC",
+    "to": "PFC",
+    "channel": "power-capex-financing",
+    "confidence": 0.74,
+    "lag": 1,
+    "businessGroupFrom": "Power Public Sector",
+    "businessGroupTo": "Power Public Sector"
+  },
+  {
+    "from": "PFC",
+    "to": "LT",
+    "channel": "infra-credit",
+    "confidence": 0.63,
+    "lag": 3,
+    "businessGroupFrom": "Power Public Sector",
+    "businessGroupTo": "Infra Private"
+  },
+  {
+    "from": "SBIN",
+    "to": "LT",
+    "channel": "project-financing",
+    "confidence": 0.7,
+    "lag": 2,
+    "businessGroupFrom": "Banking",
+    "businessGroupTo": "Infra Private"
+  },
+  {
+    "from": "HDFCBANK",
+    "to": "LT",
+    "channel": "working-capital",
+    "confidence": 0.61,
+    "lag": 2,
+    "businessGroupFrom": "Banking",
+    "businessGroupTo": "Infra Private"
+  },
+  {
+    "from": "LT",
+    "to": "RVNL",
+    "channel": "epc-rail",
+    "confidence": 0.68,
+    "lag": 2,
+    "businessGroupFrom": "Infra Private",
+    "businessGroupTo": "Rail PSU"
+  }
+]
