@@ -194,6 +194,17 @@ export class PostgresStore implements Store {
       await bootstrap.init();
       const seed = await bootstrap.read();
       await this.write(seed);
+    } else if (state.userProfiles.length === 0) {
+      const { JsonStore } = await import("./store.js");
+      const bootstrap = new JsonStore();
+      await bootstrap.init();
+      const seed = await bootstrap.read();
+      for (const user of seed.userProfiles) {
+        await this.pool.query(
+          "INSERT INTO policy_signal.user_profiles (id, payload) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING",
+          [user.id, user],
+        );
+      }
     }
   }
 
