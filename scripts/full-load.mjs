@@ -4,10 +4,9 @@ const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const USER = "demo-analyst";
 
 async function api(path, init = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "content-type": "application/json", "x-user-id": USER, ...(init.headers ?? {}) },
-    ...init,
-  });
+  const headers = { "x-user-id": USER, ...(init.headers ?? {}) };
+  if (init.body) headers["content-type"] = "application/json";
+  const res = await fetch(`${BASE}${path}`, { ...init, headers });
   const text = await res.text();
   if (!res.ok) throw new Error(`${path} ${res.status}: ${text}`);
   return text.length > 0 ? JSON.parse(text) : null;
