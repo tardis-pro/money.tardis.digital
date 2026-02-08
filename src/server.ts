@@ -1,3 +1,5 @@
+try { process.loadEnvFile(); } catch {}
+
 import Fastify from "fastify";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
