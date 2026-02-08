@@ -97,7 +97,7 @@ export class SignalPipelineService {
         continue;
       }
       const event = this.classifierService.classify(artifact, source, parsed);
-      const linkedEntities = this.entityLinkerService.link(event);
+      const linkedEntities = await this.entityLinkerService.link(event);
       const impact = this.impactScorerService.score(event, linkedEntities, source);
       const prediction = this.predictionService.predict(impact);
 

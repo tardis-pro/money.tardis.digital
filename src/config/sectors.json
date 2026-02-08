@@ -1,0 +1,318 @@
+[
+  {
+    "sector": "national-income",
+    "ministry": "Ministry of Finance",
+    "policyTriggers": ["GDP data", "NSA growth", "fiscal deficit", "GVA", "GSDP"]
+  },
+  {
+    "sector": "rbi-monetary",
+    "ministry": "Reserve Bank of India",
+    "policyTriggers": ["repo rate", "CRR", "SLR", "inflation", "monetary policy", "LTV", "risk weights"]
+  },
+  {
+    "sector": "union-budget",
+    "ministry": "Ministry of Finance",
+    "policyTriggers": ["taxation", "expenditure", "capex allocation", "disinvestment", "FRBM", "revenue deficit"]
+  },
+  {
+    "sector": "state-finances",
+    "ministry": "Ministry of Finance",
+    "policyTriggers": ["state GST", "UDAY bonds", "state borrowing", "state budget", "central transfers"]
+  },
+  {
+    "sector": "external-trade",
+    "ministry": "Ministry of Commerce",
+    "policyTriggers": ["exports", "imports", "FTAs", "trade deficit", "RoDTEP", "艾格尔"]
+  },
+  {
+    "sector": "fdi-policy",
+    "ministry": "Ministry of Commerce",
+    "policyTriggers": ["FDI limits", "automatic route", "sectoral caps", "press note 3", "investment screening"]
+  },
+  {
+    "sector": "defense-public-sector",
+    "ministry": "Ministry of Defence",
+    "policyTriggers": ["procurement", "Make in India", "offset", "DRDO", "capital acquisition", "indigenization"]
+  },
+  {
+    "sector": "defense-private",
+    "ministry": "Ministry of Defence",
+    "policyTriggers": ["private manufacturing", "export policy", "private security", "vendor development"]
+  },
+  {
+    "sector": "railways-capital",
+    "ministry": "Ministry of Railways",
+    "policyTriggers": ["capex", "Freight corridors", "station modernization", "rolling stock", "Railways PSUs"]
+  },
+  {
+    "sector": "railways-operations",
+    "ministry": "Ministry of Railways",
+    "policyTriggers": ["fare policy", "subsidy", "PSU restructuring", "Zonal restructuring", "Passenger services"]
+  },
+  {
+    "sector": "roads-highways",
+    "ministry": "Ministry of Road Transport",
+    "policyTriggers": ["NHAI projects", "toll policy", "PMGSY", "BMP", "expressways", "asset monetization"]
+  },
+  {
+    "sector": "ports-shipping",
+    "ministry": "Ministry of Ports",
+    "policyTriggers": ["Sagarmala", "cargo handling", "private participation", "tarrif", "landlord port model"]
+  },
+  {
+    "sector": "aviation",
+    "ministry": "Ministry of Civil Aviation",
+    "policyTriggers": ["UDAN", "airline regulation", "airport privatization", "FSP", "MRO policy"]
+  },
+  {
+    "sector": "urban-development",
+    "ministry": "Ministry of Housing and Urban Affairs",
+    "policyTriggers": ["Smart Cities", "PMRTS", "transit-oriented development", "Metro", "AMRUT"]
+  },
+  {
+    "sector": "housing-real-estate",
+    "ministry": "Ministry of Housing and Urban Affairs",
+    "policyTriggers": ["RERA", "taxation", "PMAY", "interest rates", " REIT", "land policy"]
+  },
+  {
+    "sector": "power-generation",
+    "ministry": "Ministry of Power",
+    "policyTriggers": ["thermal", "hydro", "capacity addition", "Ujjwal Discom", "PPAs", "tariff"]
+  },
+  {
+    "sector": "renewable-energy",
+    "ministry": "Ministry of New and Renewable Energy",
+    "policyTriggers": ["solar", "wind", "green hydrogen", "ISTS", "SECI", "RLDC", "APCL"]
+  },
+  {
+    "sector": "power-transmission",
+    "ministry": "Ministry of Power",
+    "policyTriggers": ["grid", "PFC", "CTU", "inter-state transfer", "open access", "cross-border"]
+  },
+  {
+    "sector": "oil-gas-upstream",
+    "ministry": "Ministry of Petroleum and Natural Gas",
+    "policyTriggers": ["ONGC", "oil exploration", "CBM", "nomination", "HEL", "PSC"]
+  },
+  {
+    "sector": "oil-gas-downstream",
+    "ministry": "Ministry of Petroleum and Natural Gas",
+    "policyTriggers": ["IOCL", "BPCL", "HPCL", "retail pricing", "LPG", "PNG", "CNG", "adminis tered pricing"]
+  },
+  {
+    "sector": "coal",
+    "ministry": "Ministry of Coal",
+    "policyTriggers": ["Coal India", "auction", "commercial mining", "CMR", "washery", "block allocation"]
+  },
+  {
+    "sector": "telecom",
+    "ministry": "Ministry of Communications",
+    "policyTriggers": ["5G", "spectrum", "TRAI", "broadband", "OF", "net neutrality"]
+  },
+  {
+    "sector": "banking-public",
+    "ministry": "Ministry of Finance",
+    "policyTriggers": ["PSU bank", "NPA", "recapitalization", "PSL", "prompt corrective action", "banking reforms"]
+  },
+  {
+    "sector": "banking-private",
+    "ministry": "Reserve Bank of India",
+    "policyTriggers": ["licensing", "capital adequacy", "digital banking", " Basel III", "AML"]
+  },
+  {
+    "sector": "insurance",
+    "ministry": "Ministry of Finance",
+    "policyTriggers": ["IRDAI", "LIC IPO", "reinsurance", "Bima", "Protection gap", "microinsurance"]
+  },
+  {
+    "sector": "nbfc-microfinance",
+    "ministry": "Ministry of Finance",
+    "policyTriggers": ["RBI regulations", "Mudra", "SHG", "NBFC crisis", "collateral", "JLG"]
+  },
+  {
+    "sector": "capital-markets",
+    "ministry": "Ministry of Finance",
+    "policyTriggers": ["SEBI", "FPI", "listings", "debt market", "demat", "commodities"]
+  },
+  {
+    "sector": "gst-excise",
+    "ministry": "Ministry of Finance",
+    "policyTriggers": ["GST rates", "excise duty", "cess", "compliance", "e-way bill", "input tax credit"]
+  },
+  {
+    "sector": "direct-taxes",
+    "ministry": "Ministry of Finance",
+    "policyTriggers": ["corporate tax", "personal income tax", "TDS", "capital gains", "exemptions", "DTAA"]
+  },
+  {
+    "sector": "indirect-taxes",
+    "ministry": "Ministry of Finance",
+    "policyTriggers": ["customs duty", "BCD", "import regulation", "Safeguard duty", "anti-dumping", "Rules of Origin"]
+  },
+  {
+    "sector": "pharma",
+    "ministry": "Ministry of Health and Family Welfare",
+    "policyTriggers": ["NPPA", "DCs", "export", "PLI", "clinical trials", "BDS"]
+  },
+  {
+    "sector": "healthcare",
+    "ministry": "Ministry of Health and Family Welfare",
+    "policyTriggers": ["Ayushman Bharat", "insurance", "hospitals", "medical devices", "PMJAY", "health infrastructure"]
+  },
+  {
+    "sector": "fertilizers",
+    "ministry": "Ministry of Chemicals and Fertilizers",
+    "policyTriggers": ["subsidy", "import", "Urea", "DAP", "SSP", "Neem coated urea"]
+  },
+  {
+    "sector": "automobiles",
+    "ministry": "Ministry of Heavy Industries",
+    "policyTriggers": ["FAME", "BS VI", "PLH", "auto loans", "EV policy", "scrappage policy"]
+  },
+  {
+    "sector": "cement",
+    "ministry": "Ministry of Commerce and Industry",
+    "policyTriggers": ["infrastructure spend", "freight", "capacity", "GST", "linked sectors"]
+  },
+  {
+    "sector": "metals-steel",
+    "ministry": "Ministry of Steel",
+    "policyTriggers": ["SAIL", "import duty", "MILLM", "export", "RINR", "EPR"]
+  },
+  {
+    "sector": "textiles",
+    "ministry": "Ministry of Textiles",
+    "policyTriggers": ["PLH", "export incentive", "handloom", "MSME", "TK", "PM MITRA"]
+  },
+  },
+  {
+    "sector": "fmcg",
+    "ministry": "Ministry of Consumer Affairs",
+    "policyTriggers": ["food inflation", "essential commodities", "ED", "stock limits", "price monitoring"]
+  },
+  {
+    "sector": "it-services",
+    "Ministry of Electronics and IT",
+    "policyTriggers": ["IT policy", "data localization", "exports", "STPI", "digital India", "cyber security"]
+  },
+  {
+    "sector": "digital-economy",
+    "Ministry of Electronics and IT",
+    "policyTriggers": ["digital payments", "UPI", "data protection", "FinTech", "RBI CBDC", "account aggregation"]
+  },
+  {
+    "sector": "msme",
+    "Ministry of Micro, Small and Medium Enterprises",
+    "policyTriggers": ["credit guarantee", "Mudra", "registration", "export", "CLCSS", "GEM"]
+  },
+  {
+    "sector": "education",
+    "Ministry of Education",
+    "policyTriggers": ["RTE", "higher education", "skill development", "NEP", "foreign universities", "SARANSH"]
+  },
+  {
+    "sector": "agriculture",
+    "Ministry of Agriculture and Farmers Welfare",
+    "policyTriggers": ["MSP", "PM-KISAN", "crop insurance", "procurement", "PMFBY", "eNAM"]
+  },
+  {
+    "sector": "food-processing",
+    "Ministry of Food Processing Industries",
+    "policyTriggers": ["PLH", "export", "FSSAI", "cold chain", "Mega Food Parks", "ODOP"]
+  },
+  {
+    "sector": "pensions",
+    "Ministry of Finance",
+    "policyTriggers": ["NPS", "PFRDA", "annuity", "subsidy", "OPS", "pension reform"]
+  },
+  {
+    "sector": "environment",
+    "Ministry of Environment, Forest and Climate Change",
+    "policyTriggers": ["EC", "forest clearance", "carbon trading", "EV", "CSEB", "EPR"]
+  },
+  {
+    "sector": "water",
+    "Ministry of Jal Shakti",
+    "policyTriggers": ["groundwater", "irrigation", "JJM", "recycling", "Ganga", "SBM"]
+  },
+  {
+    "sector": "disinvestment",
+    "Ministry of Finance",
+    "policyTriggers": ["CPSE", "IPO", "strategic sale", "SUUTI", "IDR", "offer for sale"]
+  },
+  {
+    "sector": "logistics",
+    "Ministry of Commerce and Industry",
+    "policyTriggers": ["Gati Shakti", "Multi-modal hubs", "MMLP", "freight rates", "last mile connectivity"]
+  },
+  {
+    "sector": "sports",
+    "Ministry of Youth Affairs and Sports",
+    "policyTriggers": ["event hosting", "infrastructure", "Khelo India", "NDSL", "SAG"]
+  },
+  {
+    "sector": "tourism",
+    "Ministry of Tourism",
+    "policyTriggers": ["visa policy", "infrastructure", "Swadesh Darshan", "PRASAD", "Medical tourism"]
+  },
+  {
+    "sector": "space",
+    "Ministry of Defence",
+    "policyTriggers": ["ISRO", "satellite launches", "space policy", "ANTRIX", "private participation"]
+  },
+  {
+    "sector": "nuclear",
+    "Department of Atomic Energy",
+    "policyTriggers": ["NPCIL", "nuclear power", "nuclear medicine", "research reactors", "liability law"]
+  },
+  {
+    "sector": "mines-minerals",
+    "Ministry of Mines",
+    "policyTriggers": ["auction", "DMF", "NMET", "mineral exploration", "royalty", "mineral bearing land"]
+  },
+  {
+    "sector": "cultures-heritage",
+    "Ministry of Culture",
+    "policyTriggers": ["monuments", "intangible heritage", "archaeology", "Sankalp", "UNESCO"]
+  },
+  {
+    "sector": " labour-employment",
+    "Ministry of Labour and Employment",
+    "policyTriggers": ["wage code", "ESIC", "EPFO", "social security", "minimum wages", "formalization"]
+  },
+  {
+    "sector": "panchayati-raj",
+    "Ministry of Panchayati Raj",
+    "policyTriggers": ["local governance", "funds", "PESA", "FAD", "capacity building"]
+  },
+  {
+    "sector": "coco",
+    "Ministry of Finance",
+    "policyTriggers": ["COCO", "CPSEs", "Board restructuring", "governance", "performance monitoring"]
+  },
+  {
+    "sector": "social-justice",
+    "Ministry of Social Justice and Empowerment",
+    "policyTriggers": ["reservation", "scholarships", "rehabilitation", "DAD", "social security"]
+  },
+  {
+    "sector": "minority-affairs",
+    "Ministry of Minority Affairs",
+    "policyTriggers": ["PMJVK", "education", "skill development", "loans", "multi-sectoral development"]
+  },
+  {
+    "sector": "sc-welfare",
+    "Ministry of Social Justice and Empowerment",
+    "policyTriggers": ["SC corporations", "scholarships", "post-matric", "GIA", "research"]
+  },
+  {
+    "sector": "st-welfare",
+    "Ministry of Tribal Affairs",
+    "policyTriggers": ["ST corporations", "Eklavya", "forest rights", "VAA", "education"]
+  },
+  {
+    "sector": "women-child-dev",
+    "Ministry of Women and Child Development",
+    "policyTriggers": ["ICDS", "PMMVY", "Poshan", "child protection", "women safety", "crèches"]
+  }
+]

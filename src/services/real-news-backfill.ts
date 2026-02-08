@@ -1,5 +1,5 @@
 import { writeFile } from "node:fs/promises";
-import type { AlertRecord, BackfillRunRecord, EventRecord, RawArtifact, SignalRecord, SourceRegistryItem } from "../types.js";
+import type { AlertRecord, BackfillRunRecord, EventRecord, LinkedEntity, RawArtifact, SignalRecord, SourceRegistryItem } from "../types.js";
 import type { Store } from "../store.js";
 import { makeId, nowIso, sha256 } from "../utils.js";
 import { AlertService } from "./alerts.js";
@@ -190,7 +190,71 @@ export class RealNewsBackfillService {
       });
     });
 
-    const bodyWrites: Array<{ bodyPath: string; body: string }> = [];
+      const bodyWrites: Array<{ bodyPath: string; body: string }> = [];
+
+      // Pre-process articles: compute entities before transaction
+      interface PreprocessedArticle {
+        article: typeof articles[0];
+        artifact: RawArtifact;
+        event: EventRecord;
+        linkedEntities: LinkedEntity[];
+        contentHash: string;
+        publishedAt: string;
+      }
+
+      const preprocessedArticles: PreprocessedArticle[] = [];
+      for (const article of articles) {
+        const title = (article.title ?? "Untitled article").trim();
+        const summary = [title, article.domain ?? "", article.language ?? ""].filter((part) => part.length > 0).join(" | ");
+        let publishedAt = nowIso();
+        if (article.seendate) {
+          const d = new Date(article.seendate);
+          publishedAt = Number.isNaN(d.getTime()) ? nowIso() : d.toISOString();
+        }
+        const contentHash = sha256(`${article.url}|${title}|${publishedAt}`);
+
+        const artifactId = makeId("artifact");
+        const artifact: RawArtifact = {
+          id: artifactId,
+          sourceId: 'temp',
+          sourceUrl: article.url,
+          fetchedAt: nowIso(),
+          contentHash,
+          parserVersion: "parser-v1",
+          modelVersion: "predictor-v1",
+          contentType: "text/plain",
+          bodyPath: `${this.store.getArtifactsDir()}/${artifactId}.txt`,
+          metadata: {
+            sourceName: 'Real News Backfill',
+            parserType: 'html',
+            domain: article.domain ?? "unknown",
+          },
+        };
+
+        const event: EventRecord = {
+          id: makeId("event"),
+          artifactId: artifact.id,
+          sourceId: 'temp',
+          eventType: inferEventType(title),
+          title,
+          summary,
+          evidenceSnippet: title.slice(0, 220),
+          publishedAt,
+          noveltyScore: 0.7,
+          confidence: 0.72,
+        };
+
+        const linkedEntities = await this.entityLinker.link(event);
+
+        preprocessedArticles.push({
+          article,
+          artifact,
+          event,
+          linkedEntities,
+          contentHash,
+          publishedAt
+        });
+      }
 
     try {
       const result = await this.store.transaction((state) => {
@@ -199,58 +263,22 @@ export class RealNewsBackfillService {
         let createdAlerts = 0;
         let skippedDuplicates = 0;
 
-        for (const article of articles) {
-          const title = (article.title ?? "Untitled article").trim();
-          const summary = [title, article.domain ?? "", article.language ?? ""].filter((part) => part.length > 0).join(" | ");
-          let publishedAt = nowIso();
-          if (article.seendate) {
-            const d = new Date(article.seendate);
-            publishedAt = Number.isNaN(d.getTime()) ? nowIso() : d.toISOString();
-          }
-          const body = `${title}. ${article.url}`;
-          const contentHash = sha256(`${article.url}|${title}|${publishedAt}`);
+        for (const preprocessed of preprocessedArticles) {
+          const { article, artifact, event, linkedEntities, contentHash, publishedAt } = preprocessed;
 
-          const duplicate = state.artifacts.find((artifact) => artifact.sourceId === source.id && artifact.contentHash === contentHash);
+          // Update with real sourceId
+          artifact.sourceId = source.id;
+          event.sourceId = source.id;
+
+          const duplicate = state.artifacts.find((a) => a.sourceId === source.id && a.contentHash === contentHash);
           if (duplicate) {
             skippedDuplicates += 1;
             continue;
           }
 
-          const artifactId = makeId("artifact");
-          const artifact: RawArtifact = {
-            id: artifactId,
-            sourceId: source.id,
-            sourceUrl: article.url,
-            fetchedAt: nowIso(),
-            contentHash,
-            parserVersion: "parser-v1",
-            modelVersion: "predictor-v1",
-            contentType: "text/plain",
-            bodyPath: `${this.store.getArtifactsDir()}/${artifactId}.txt`,
-            metadata: {
-              sourceName: source.name,
-              parserType: source.parserType,
-              domain: article.domain ?? "unknown",
-            },
-          };
           state.artifacts.push(artifact);
-          bodyWrites.push({ bodyPath: artifact.bodyPath, body });
+          bodyWrites.push({ bodyPath: artifact.bodyPath, body: `${article.title ?? "Untitled article"}. ${article.url}` });
 
-          const event: EventRecord = {
-            id: makeId("event"),
-            artifactId: artifact.id,
-            sourceId: source.id,
-            eventType: inferEventType(title),
-            title,
-            summary,
-            evidenceSnippet: title.slice(0, 220),
-            publishedAt,
-            noveltyScore: 0.7,
-            confidence: 0.72,
-          };
-          state.events.push(event);
-
-          const linkedEntities = this.entityLinker.link(event);
           const impact = this.impactScorer.score(event, linkedEntities, source);
           const prediction = this.predictionService.predict(impact);
           const signal: SignalRecord = {
@@ -265,6 +293,8 @@ export class RealNewsBackfillService {
             status: "active",
           };
           signal.score = computeFinalScore(signal);
+
+          state.events.push(event);
           state.signals.push(signal);
 
           const decision = this.alertService.shouldAlert(signal, state.alerts);
