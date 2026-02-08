@@ -202,7 +202,11 @@ export class RealNewsBackfillService {
         for (const article of articles) {
           const title = (article.title ?? "Untitled article").trim();
           const summary = [title, article.domain ?? "", article.language ?? ""].filter((part) => part.length > 0).join(" | ");
-          const publishedAt = article.seendate ? new Date(article.seendate).toISOString() : nowIso();
+          let publishedAt = nowIso();
+          if (article.seendate) {
+            const d = new Date(article.seendate);
+            publishedAt = Number.isNaN(d.getTime()) ? nowIso() : d.toISOString();
+          }
           const body = `${title}. ${article.url}`;
           const contentHash = sha256(`${article.url}|${title}|${publishedAt}`);
 
