@@ -3,25 +3,42 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>India Policy Signal Terminal</title>
+    <title>IPST | India Policy Signal Terminal</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
         theme: {
           extend: {
             fontFamily: {
-              display: ["Space Grotesk", "sans-serif"],
-              body: ["Manrope", "sans-serif"],
+              mono: ['"JetBrains Mono"', '"Fira Code"', 'monospace'],
+              display: ['"DM Sans"', 'system-ui', 'sans-serif'],
+              body: ['"DM Sans"', 'system-ui', 'sans-serif'],
             },
             colors: {
-              night: "#060b15",
-              steel: "#111a2d",
-              signal: "#3dd6b5",
-              ember: "#ff9666",
-              cloud: "#9fb4d5",
+              term: {
+                bg: '#0a0e14',
+                panel: '#0d1117',
+                surface: '#131920',
+                border: '#1e2832',
+                'border-hi': '#2a3a4a',
+                muted: '#4a5d73',
+                text: '#c9d6e3',
+                bright: '#e8eef5',
+              },
+              accent: {
+                green: '#00e599',
+                'green-dim': '#00e59940',
+                amber: '#ffb224',
+                'amber-dim': '#ffb22430',
+                red: '#ff6b6b',
+                'red-dim': '#ff6b6b30',
+                blue: '#5b9aff',
+                'blue-dim': '#5b9aff25',
+                cyan: '#22d3ee',
+              },
             },
-            boxShadow: {
-              glow: "0 0 0 1px rgba(61,214,181,0.24), 0 12px 48px rgba(3,10,22,0.65)",
+            fontSize: {
+              '2xs': ['0.65rem', { lineHeight: '0.9rem' }],
             },
           },
         },
@@ -30,14 +47,26 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
+    <style>
+      * { scrollbar-width: thin; scrollbar-color: #1e2832 transparent; }
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #1e2832; border-radius: 3px; }
+      @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.3} }
+      .live-dot { animation: pulse-dot 2s ease-in-out infinite; }
+      @keyframes scanline { 0% { transform: translateY(-100%); } 100% { transform: translateY(100vh); } }
+      .scanline {
+        position: fixed; top: 0; left: 0; right: 0; height: 2px;
+        background: linear-gradient(90deg, transparent, #00e59915, #00e59908, transparent);
+        animation: scanline 8s linear infinite; pointer-events: none; z-index: 50;
+      }
+    </style>
   </head>
-  <body class="min-h-screen bg-night font-body text-slate-100">
-    <div
-      class="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(61,214,181,0.16),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(100,149,237,0.14),transparent_40%),linear-gradient(180deg,#060b15_0%,#0a1325_55%,#060b15_100%)]"
-    ></div>
+  <body class="min-h-screen bg-term-bg font-body text-term-text antialiased">
+    <div class="scanline"></div>
     <div id="app"><!--SSR_CONTENT--></div>
     <script type="module" src="/src/client.tsx"></script>
   </body>
