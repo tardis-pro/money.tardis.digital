@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import htm from "htm/dist/htm.mjs";
-
-const html = htm.bind(React.createElement as (...args: unknown[]) => React.ReactElement);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const htm: any = (await import("htm")).default;
+const html = htm.bind(React.createElement);
 
 interface MitDashboardProps {
   userId: string;

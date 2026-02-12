@@ -90,11 +90,25 @@ const settingsSchema = z.object({
 
 const runStatus = new Map<string, { status: "started" | "completed" | "failed"; result?: unknown; error?: string }>();
 let screenipyCache: { rows: ReturnType<typeof enrichWithMITScores>; fetchedAt: string } | null = null;
-const SCREENIPY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const SCREENIPY_CACHE_TTL_MS = 5 * 60 * 1000;
 const IST_REFRESH_SLOTS = (process.env.MIT_INTRADAY_REFRESH_SLOTS ?? "10:00,12:30,14:45")
   .split(",")
   .map((value) => value.trim())
   .filter((value) => /^\d{2}:\d{2}$/.test(value));
+
+let dailyPipelineLock: {
+  date: string | null;
+  status: "running" | "completed" | "failed";
+  runId: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+} = {
+  date: null,
+  status: "completed",
+  runId: null,
+  startedAt: null,
+  completedAt: null,
+};
 
 const schedulerState: {
   started: boolean;
@@ -257,6 +271,14 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
       return reply.code(400).send({ error: parsed.error.issues });
     }
     const payload = parsed.data;
+    
+    if (process.env.NODE_ENV === "production" && payload.snapshot.source === "manual") {
+      return reply.code(403).send({ 
+        error: "Manual source imports are not allowed in production",
+        code: "NO_MOCK_POLICY"
+      });
+    }
+    
     await deps.mitStore.transaction((draft) => {
       draft.fundamentals[payload.ticker.toUpperCase()] = {
         ticker: payload.ticker.toUpperCase(),
@@ -284,11 +306,16 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
       }
       return null;
     });
+
     return {
       requested: Math.min(chosen.length, limit),
       updated: refresh.updated.length,
       failed: refresh.failed,
+      missingCriticalFields: refresh.missingCriticalFields,
       knownFundamentals: Object.keys(state.fundamentals).length + refresh.updated.length,
+      coveragePct: refresh.updated.length > 0
+        ? Math.round((refresh.updated.length / Math.min(chosen.length, limit)) * 100)
+        : 0,
     };
   });
 
@@ -335,9 +362,36 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
     return plan;
   });
 
-  app.post("/api/mit/pipeline/run", async () => {
-    const runId = `mit-run-${Date.now()}`;
-    runStatus.set(runId, { status: "started" });
+  app.post("/api/mit/pipeline/run", async (request, reply) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const dateBasedRunId = `mit-run-${today}`;
+
+    if (dailyPipelineLock.status === "running" && dailyPipelineLock.date === today) {
+      return reply.code(423).send({
+        error: "Pipeline already running",
+        runId: dailyPipelineLock.runId,
+        startedAt: dailyPipelineLock.startedAt,
+      });
+    }
+
+    if (dailyPipelineLock.status === "completed" && dailyPipelineLock.date === today) {
+      return reply.code(200).send({
+        status: "already_completed",
+        runId: dailyPipelineLock.runId,
+        completedAt: dailyPipelineLock.completedAt,
+        message: "Pipeline already completed for today. Use /api/mit/pipeline/latest for results.",
+      });
+    }
+
+    dailyPipelineLock = {
+      date: today,
+      status: "running",
+      runId: dateBasedRunId,
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+    };
+
+    runStatus.set(dateBasedRunId, { status: "started" });
 
     (async () => {
       try {
@@ -575,10 +629,11 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
 
           upsertDailyRun({ state: draft, technicals, fundamentals: draft.fundamentals, scores, ideas });
           const anomalies = detectMitAnomalies(draft.candles);
-          runStatus.set(runId, {
+          const completedAt = new Date().toISOString();
+          runStatus.set(dateBasedRunId, {
             status: "completed",
             result: {
-              runId,
+              runId: dateBasedRunId,
               marketMode,
               anomalies: anomalies.slice(0, 25),
               ideas: ideas.length,
@@ -586,18 +641,24 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
               fundamentalsRefreshFailed: fundamentalsRefresh.failed,
             },
           });
-          draft.portfolio.lastPipelineRun = new Date().toISOString();
+          dailyPipelineLock.status = "completed";
+          dailyPipelineLock.completedAt = completedAt;
+          draft.portfolio.lastPipelineRun = completedAt;
           return null;
         });
-        if (!runStatus.get(runId) || runStatus.get(runId)?.status !== "completed") {
-          runStatus.set(runId, { status: "completed", result: { runId } });
+        if (!runStatus.get(dateBasedRunId) || runStatus.get(dateBasedRunId)?.status !== "completed") {
+          runStatus.set(dateBasedRunId, { status: "completed", result: { runId: dateBasedRunId } });
+          dailyPipelineLock.status = "completed";
+          dailyPipelineLock.completedAt = new Date().toISOString();
         }
       } catch (error) {
-        runStatus.set(runId, { status: "failed", error: error instanceof Error ? error.message : String(error) });
+        runStatus.set(dateBasedRunId, { status: "failed", error: error instanceof Error ? error.message : String(error) });
+        dailyPipelineLock.status = "failed";
+        dailyPipelineLock.completedAt = new Date().toISOString();
       }
     })();
 
-    return { runId, status: "started" };
+    return { runId: dateBasedRunId, status: "started" };
   });
 
   app.get("/api/mit/pipeline/status/:runId", async (request, reply) => {

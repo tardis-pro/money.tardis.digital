@@ -1,18 +1,41 @@
 import type { FundamentalSnapshot } from "../../mit-types.js";
 import { getScreenerFetcher, mergeFundamentals } from "./screener-fundamentals-fetcher.js";
 
+// Hardening constants
+const FETCH_TIMEOUT_MS = 15000; // 15 second timeout per fetch
+const MAX_RETRIES = 2;
+const BASE_RETRY_DELAY_MS = 1000;
+const RATE_LIMIT_DELAY_MS = 220;
+
 export interface FundamentalsRefreshResult {
   updated: FundamentalSnapshot[];
-  failed: Array<{ ticker: string; error: string }>;
+  failed: Array<{ ticker: string; error: string; retries: number }>;
+  missingCriticalFields: Array<{ ticker: string; fields: string[] }>;
+}
+
+export interface FundamentalsProviderService {
+  refreshTickers(tickers: string[]): Promise<FundamentalsRefreshResult>;
 }
 
 export class FundamentalsProviderService {
+  // Critical fields that must be populated for a valid fundamentals record
+  private readonly criticalFields: (keyof FundamentalSnapshot)[] = [
+    "pe",
+    "peg",
+    "marketCap",
+    "revenueHistory",
+    "epsHistory",
+    "roe",
+    "debtToEquity",
+    "fcfHistory",
+  ];
+
   async fetchTicker(ticker: string): Promise<FundamentalSnapshot> {
     const symbol = `${ticker.toUpperCase()}.NS`;
     const [quote, timeseries, screenerData] = await Promise.all([
-      this.fetchQuoteSummary(symbol).catch(() => ({} as Record<string, Record<string, unknown>>)),
-      this.fetchTimeseries(symbol),
-      getScreenerFetcher().fetchTicker(ticker).catch(() => null),
+      this.fetchWithTimeout(this.fetchQuoteSummary(symbol), FETCH_TIMEOUT_MS, `quoteSummary for ${symbol}`),
+      this.fetchWithTimeout(this.fetchTimeseries(symbol), FETCH_TIMEOUT_MS, `timeseries for ${symbol}`),
+      this.fetchWithTimeout(getScreenerFetcher().fetchTicker(ticker).catch(() => null), FETCH_TIMEOUT_MS, `screener for ${ticker}`),
     ]);
 
     const revenueHistory = pickSeries(timeseries, ["annualTotalRevenue", "annualOperatingRevenue"]);
@@ -54,19 +77,67 @@ export class FundamentalsProviderService {
 
   async refreshTickers(tickers: string[]): Promise<FundamentalsRefreshResult> {
     const updated: FundamentalSnapshot[] = [];
-    const failed: Array<{ ticker: string; error: string }> = [];
+    const failed: Array<{ ticker: string; error: string; retries: number }> = [];
+    const missingCriticalFields: Array<{ ticker: string; fields: string[] }> = [];
 
     for (const ticker of tickers) {
-      try {
-        const snapshot = await this.fetchTicker(ticker);
-        updated.push(snapshot);
-      } catch (error) {
-        failed.push({ ticker, error: error instanceof Error ? error.message : String(error) });
+      let retries = 0;
+      let lastError: string | null = null;
+
+      while (retries <= MAX_RETRIES) {
+        try {
+          const snapshot = await this.fetchTicker(ticker);
+
+          // Track missing critical fields
+          const missing = this.criticalFields
+            .filter((field) => {
+              const value = snapshot[field];
+              if (Array.isArray(value)) {
+                return value.length === 0;
+              }
+              return value === null || value === undefined;
+            })
+            .map((field) => field as string);
+
+          if (missing.length > 0) {
+            missingCriticalFields.push({ ticker: ticker.toUpperCase(), fields: missing });
+          }
+
+          updated.push(snapshot);
+          break; // Success, exit retry loop
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : String(error);
+          retries++;
+
+          if (retries <= MAX_RETRIES) {
+            // Exponential backoff
+            const delay = BASE_RETRY_DELAY_MS * Math.pow(2, retries - 1);
+            await sleep(delay);
+          }
+        }
       }
-      await sleep(220);
+
+      if (retries > MAX_RETRIES && lastError) {
+        failed.push({ ticker: ticker.toUpperCase(), error: lastError, retries });
+      }
+
+      await sleep(RATE_LIMIT_DELAY_MS);
     }
 
-    return { updated, failed };
+    return { updated, failed, missingCriticalFields };
+  }
+
+  private async fetchWithTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    operationName: string
+  ): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error(`Timeout (${timeoutMs}ms) during ${operationName}`)), timeoutMs)
+      ),
+    ]);
   }
 
   private async fetchQuoteSummary(symbol: string): Promise<Record<string, Record<string, unknown>>> {

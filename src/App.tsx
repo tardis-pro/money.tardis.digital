@@ -15,10 +15,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import htm from "htm/dist/htm.mjs";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const htm: any = (await import("htm")).default;
+const html = htm.bind(React.createElement);
 import { MitDashboard } from "./MitDashboard.js";
-
-const html = htm.bind(React.createElement as (...args: unknown[]) => React.ReactElement);
 
 const USERS = [
   { id: "demo-analyst", label: "Analyst", role: "analyst" },

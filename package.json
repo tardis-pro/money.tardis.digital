@@ -13,7 +13,7 @@
     "build": "tsc -p tsconfig.json && vite build && vite build --ssr src/server-entry.tsx --outDir dist/server",
     "build:client": "vite build --outDir dist/client --manifest",
     "build:server": "vite build --ssr src/server-entry.tsx --outDir dist/server",
-    "start": "NODE_ENV=production node dist/src/server.js",
+    "start": "NODE_ENV=production node dist/server/server-entry.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build --silent && node --test dist/test/*.test.js",
     "e2e:backfill": "node scripts/e2e_backfill.mjs"

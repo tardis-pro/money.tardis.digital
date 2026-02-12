@@ -32,7 +32,7 @@ COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile || bun install
 
 COPY . .
-RUN bun run build
+RUN mkdir -p dist/src && bun run build 2>&1 | tee /build/build.log
 
 # Stage 2: Final runtime image
 FROM debian:bookworm-slim
