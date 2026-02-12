@@ -176,6 +176,7 @@ export type TerminalRoute =
   | "alerts"
   | "supply-chain"
   | "watchlists"
+  | "mit"
   | "system";
 
 export interface CommandLogRecord {

@@ -15,6 +15,8 @@ const ROUTE_ALIASES: Record<string, TerminalRoute> = {
   graph: "supply-chain",
   watchlist: "watchlists",
   watchlists: "watchlists",
+  mit: "mit",
+  trading: "mit",
   system: "system",
   status: "system",
   help: "overview",

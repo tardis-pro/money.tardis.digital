@@ -16,6 +16,7 @@ import {
   YAxis,
 } from "recharts";
 import htm from "htm/dist/htm.mjs";
+import { MitDashboard } from "./MitDashboard.js";
 
 const html = htm.bind(React.createElement as (...args: unknown[]) => React.ReactElement);
 
@@ -92,6 +93,7 @@ const TABS = [
   { id: "alerts", label: "ALT", full: "Alerts" },
   { id: "supply-chain", label: "SCG", full: "Supply Chain" },
   { id: "watchlists", label: "WCH", full: "Watchlists" },
+  { id: "mit", label: "MIT", full: "MIT Trading" },
 ] as const;
 
 function StatCell({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: string }) {
@@ -383,6 +385,12 @@ export function App() {
 
       ${/* ── MAIN CONTENT ── */ ""}
       <main className="flex-1 mx-auto max-w-[1600px] w-full px-4 py-4 space-y-4">
+
+        ${activeTab === "mit" ? html`
+          <div id="panel-mit">
+            <${MitDashboard} userId=${userId} />
+          </div>
+        ` : null}
 
         ${/* ── STAT STRIP ── */ ""}
         <${motion.div}

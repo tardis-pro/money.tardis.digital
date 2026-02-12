@@ -112,7 +112,7 @@ function defaultUserProfiles(at: string): UserProfile[] {
       displayName: "Demo Viewer",
       role: "viewer",
       sourceEntitlements: ["businessline_rss"],
-      routeEntitlements: ["overview", "signals", "heatmap", "alerts", "supply-chain", "watchlists", "system"],
+      routeEntitlements: ["overview", "signals", "heatmap", "alerts", "supply-chain", "watchlists", "mit", "system"],
       createdAt: at,
       updatedAt: at,
     },
@@ -121,7 +121,7 @@ function defaultUserProfiles(at: string): UserProfile[] {
       displayName: "Demo Analyst",
       role: "analyst",
       sourceEntitlements: ["pib_press", "rbi_circulars", "nse_announcements", "cppp_tenders", "businessline_rss"],
-      routeEntitlements: ["overview", "signals", "heatmap", "alerts", "supply-chain", "watchlists", "system"],
+      routeEntitlements: ["overview", "signals", "heatmap", "alerts", "supply-chain", "watchlists", "mit", "system"],
       createdAt: at,
       updatedAt: at,
     },
@@ -130,7 +130,7 @@ function defaultUserProfiles(at: string): UserProfile[] {
       displayName: "Demo Admin",
       role: "admin",
       sourceEntitlements: ["*"],
-      routeEntitlements: ["overview", "signals", "heatmap", "alerts", "supply-chain", "watchlists", "system"],
+      routeEntitlements: ["overview", "signals", "heatmap", "alerts", "supply-chain", "watchlists", "mit", "system"],
       createdAt: at,
       updatedAt: at,
     },
@@ -172,6 +172,14 @@ export class JsonStore implements Store {
     if (existing.userProfiles.length === 0) {
       existing.userProfiles = defaultUserProfiles(new Date().toISOString());
       dirty = true;
+    } else {
+      for (const profile of existing.userProfiles) {
+        if (!profile.routeEntitlements.includes("mit")) {
+          profile.routeEntitlements.push("mit");
+          profile.updatedAt = new Date().toISOString();
+          dirty = true;
+        }
+      }
     }
     if (dirty) {
       await this.write(existing);
