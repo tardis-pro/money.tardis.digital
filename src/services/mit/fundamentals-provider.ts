@@ -1,4 +1,5 @@
 import type { FundamentalSnapshot } from "../../mit-types.js";
+import { getScreenerFetcher, mergeFundamentals } from "./screener-fundamentals-fetcher.js";
 
 export interface FundamentalsRefreshResult {
   updated: FundamentalSnapshot[];
@@ -8,9 +9,10 @@ export interface FundamentalsRefreshResult {
 export class FundamentalsProviderService {
   async fetchTicker(ticker: string): Promise<FundamentalSnapshot> {
     const symbol = `${ticker.toUpperCase()}.NS`;
-    const [quote, timeseries] = await Promise.all([
+    const [quote, timeseries, screenerData] = await Promise.all([
       this.fetchQuoteSummary(symbol).catch(() => ({} as Record<string, Record<string, unknown>>)),
       this.fetchTimeseries(symbol),
+      getScreenerFetcher().fetchTicker(ticker).catch(() => null),
     ]);
 
     const revenueHistory = pickSeries(timeseries, ["annualTotalRevenue", "annualOperatingRevenue"]);
@@ -23,7 +25,7 @@ export class FundamentalsProviderService {
     const peg = n(quote.defaultKeyStatistics?.pegRatio);
     const marketCap = n(quote.summaryDetail?.marketCap) !== null ? (n(quote.summaryDetail?.marketCap) ?? 0) / 1e7 : null;
 
-    return {
+    const yahooData: FundamentalSnapshot = {
       ticker: ticker.toUpperCase(),
       fetchedAt: new Date().toISOString(),
       source: "morningstar",
@@ -46,6 +48,8 @@ export class FundamentalsProviderService {
       epsCAGR_3y: cagr(epsHistory, 3),
       epsCAGR_5y: cagr(epsHistory, 5),
     };
+
+    return mergeFundamentals(yahooData, screenerData);
   }
 
   async refreshTickers(tickers: string[]): Promise<FundamentalsRefreshResult> {

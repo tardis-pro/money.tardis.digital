@@ -547,16 +547,10 @@ def fetch_real_data_scan(ticker_option, output_path):
     print(f"Real-data scan complete: {len(rows)} symbols written to {output_path}", file=sys.stderr)
 
 def run_scan(ticker_option, execute_option, output_path):
-    # Primary: yfinance-based scan (stdlib + urllib, no pandas/yfinance dependency)
-    try:
-        if fetch_real_data_scan_stdlib(ticker_option, output_path):
-            print(f"Real-data scan complete -> {output_path}", file=sys.stderr)
-            return
-    except Exception as e:
-        print(f"Real-data scan failed ({e}), falling back to simulated data", file=sys.stderr)
-
-    # Fallback: simulated data only if real fetch fails
-    generate_simulated_data(output_path)
+    if fetch_real_data_scan_stdlib(ticker_option, output_path):
+        print(f"Real-data scan complete -> {output_path}", file=sys.stderr)
+        return
+    raise RuntimeError("Real-data scan failed - no simulated data allowed. Check NSE data source connectivity.")
 
 def generate_simulated_data(output_path):
     """Generate realistic simulated NSE stock scan data when pkscreener is not available."""

@@ -1,10 +1,11 @@
-import type { DailyCandle, EntryExitPlan, MitFeed, MitMarketTone, TechnicalSnapshot } from "../../mit-types.js";
+import type { DailyCandle, EntryExitPlan, FundamentalSnapshot, MitFeed, MitMarketTone, TechnicalSnapshot } from "../../mit-types.js";
 
 export interface EntryExitInput {
   ticker: string;
   feed: MitFeed;
   technicals: TechnicalSnapshot;
   candles: DailyCandle[];
+  fundamentals?: FundamentalSnapshot;
   stopPct: number;
   trailingActivationPct: number;
   marketTone?: MitMarketTone;
@@ -55,7 +56,12 @@ export function computeEntryExitPlan(input: EntryExitInput): EntryExitPlan | nul
 
   const rMultiple = (firstTarget - mid) / risk;
   const firstTargetPct = (firstTarget - mid) / mid;
-  const trailingActivationPrice = mid + (firstTarget - mid) * input.trailingActivationPct;
+  const rsiOverbought = (input.technicals.rsi14 ?? 50) > 70;
+  const trailingActivationPrice = rsiOverbought 
+    ? latest.close 
+    : mid + (firstTarget - mid) * input.trailingActivationPct;
+
+  const invalidation = computeInvalidation(input.fundamentals);
 
   return {
     ticker: input.ticker,
@@ -68,9 +74,56 @@ export function computeEntryExitPlan(input: EntryExitInput): EntryExitPlan | nul
     firstTargetPct,
     rMultiple,
     trailingActivationPrice,
-    invalidation: [],
+    invalidation,
     computedAt: new Date().toISOString(),
   };
+}
+
+function computeInvalidation(fundamentals: FundamentalSnapshot | undefined): string[] {
+  if (!fundamentals) return [];
+  
+  const conditions: string[] = [];
+  
+  if (fundamentals.epsHistory.length >= 2) {
+    const recent = fundamentals.epsHistory.slice(-2);
+    const bothWeak = recent.every(e => e.value < 0) || 
+      (recent.length === 2 && recent[1] && recent[0] && 
+       recent[1].value < recent[0].value * 0.5);
+    if (bothWeak) {
+      conditions.push("Two consecutive weak quarters (EPS decline or negative)");
+    }
+  }
+  
+  if (fundamentals.opmHistory.length >= 2) {
+    const recent = fundamentals.opmHistory.slice(-2);
+    if (recent.length === 2 && recent[1] && recent[0] && 
+        recent[1].value < recent[0].value * 0.8) {
+      conditions.push("Significant margin compression detected");
+    }
+  }
+  
+  if (fundamentals.fcfHistory.length >= 1) {
+    const latestFcf = fundamentals.fcfHistory[fundamentals.fcfHistory.length - 1];
+    if (latestFcf && latestFcf.value < 0) {
+      conditions.push("Negative FCF shock - free cash flow turned negative");
+    }
+  }
+  
+  if (fundamentals.promoterHoldingPct !== null && fundamentals.promoterHoldingPct < 30) {
+    conditions.push(`Low promoter holding (${fundamentals.promoterHoldingPct.toFixed(1)}%) - potential governance concern`);
+  }
+  
+  if (fundamentals.promoterPledgePct !== null && fundamentals.promoterPledgePct > 50) {
+    conditions.push(`High promoter pledging (${fundamentals.promoterPledgePct.toFixed(1)}%) - governance red flag`);
+  }
+  
+  if (fundamentals.auditorRemarks === "adverse") {
+    conditions.push("Adverse auditor remarks - avoid entry");
+  } else if (fundamentals.auditorRemarks === "qualified") {
+    conditions.push("Qualified auditor opinion - review before entry");
+  }
+  
+  return conditions;
 }
 
 function highestClose(candles: DailyCandle[], lookback: number): number {

@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: policy-signal-app
+    container_name: mit-trading-app
     ports:
       - "0.0.0.0:3000:3000"
     environment:
@@ -11,16 +11,23 @@ services:
       DATABASE_URL: postgres://postgres:postgres@timescaledb:5432/policy_signal
       PORT: 3000
       NODE_ENV: production
+      MIT_INTRADAY_REFRESH_SLOTS: "10:00,12:30,14:45"
+      LOG_LEVEL: info
+      SCREENIPY_PYTHON: python3
+      SCREENIPY_SCRIPT_PATH: /app/src/screenipy.py
     depends_on:
       timescaledb:
         condition: service_healthy
     volumes:
       - ./data:/app/data
+      - ./logs:/app/logs
     restart: unless-stopped
+    networks:
+      - mit-network
 
   timescaledb:
     image: timescale/timescaledb:latest-pg18
-    container_name: policy-signal-timescaledb
+    container_name: mit-timescaledb
     ports:
       - "0.0.0.0:5432:5432"
     environment:
@@ -34,6 +41,33 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
+    networks:
+      - mit-network
+
+  scheduler:
+    image: curlimages/curl:latest
+    container_name: mit-scheduler
+    depends_on:
+      - app
+    environment:
+      PIPELINE_URL: http://app:3000/api/mit/pipeline/run
+      PNL_REFRESH_URL: http://app:3000/api/mit/pnl/refresh
+      FUNDAMENTALS_URL: http://app:3000/api/mit/fundamentals/refresh
+    command: >
+      sh -c "
+        echo '0 3 * * 1-5 curl -X POST $$PIPELINE_URL' > /etc/crontabs/root &&
+        echo '30 4 * * 1-5 curl -X POST $$PNL_REFRESH_URL' >> /etc/crontabs/root &&
+        echo '0 2 * * 0 curl -X POST -H \"Content-Type: application/json\" -d \"{\\\"limit\\\": 50}\" $$FUNDAMENTALS_URL' >> /etc/crontabs/root &&
+        crond -f -l 2
+      "
+    restart: unless-stopped
+    networks:
+      - mit-network
+
+networks:
+  mit-network:
+    driver: bridge
 
 volumes:
   timescaledb_data:
