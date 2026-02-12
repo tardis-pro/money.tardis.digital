@@ -1,50 +1,26 @@
 -- Seed demo users for MIT Trading System
--- Run this against your policy_signal database
+-- Run after starting the app (tables are auto-created via PostgresStore.init())
 
-INSERT INTO user_profiles (id, display_name, role, source_entitlements, route_entitlements, created_at, updated_at)
+-- Insert into policy_signal.user_profiles table (jsonb payload format)
+INSERT INTO policy_signal.user_profiles (id, payload)
 VALUES
 (
   'demo-analyst',
-  'Demo Analyst',
-  'analyst',
-  '["pib_press", "rbi_circulars", "nse_announcements", "cppp_tenders", "businessline_rss"]',
-  '["overview", "signals", "heatmap", "alerts", "supply-chain", "watchlists", "mit", "system"]',
-  NOW(),
-  NOW()
+  '{"id":"demo-analyst","displayName":"Demo Analyst","role":"analyst","sourceEntitlements":["pib_press","rbi_circulars","nse_announcements","cppp_tenders","businessline_rss"],"routeEntitlements":["overview","signals","heatmap","alerts","supply-chain","watchlists","mit","system"],"createdAt":"2026-02-12T00:00:00Z","updatedAt":"2026-02-12T00:00:00Z"}'
 ),
 (
   'demo-viewer',
-  'Demo Viewer',
-  'viewer',
-  '["businessline_rss"]',
-  '["overview", "signals", "heatmap", "alerts", "supply-chain", "watchlists", "mit", "system"]',
-  NOW(),
-  NOW()
+  '{"id":"demo-viewer","displayName":"Demo Viewer","role":"viewer","sourceEntitlements":["businessline_rss"],"routeEntitlements":["overview","signals","heatmap","alerts","supply-chain","watchlists","mit","system"],"createdAt":"2026-02-12T00:00:00Z","updatedAt":"2026-02-12T00:00:00Z"}'
 ),
 (
   'demo-admin',
-  'Demo Admin',
-  'admin',
-  '["*"]',
-  '["overview", "signals", "heatmap", "alerts", "supply-chain", "watchlists", "mit", "system"]',
-  NOW(),
-  NOW()
+  '{"id":"demo-admin","displayName":"Demo Admin","role":"admin","sourceEntitlements":["*"],"routeEntitlements":["overview","signals","heatmap","alerts","supply-chain","watchlists","mit","system"],"createdAt":"2026-02-12T00:00:00Z","updatedAt":"2026-02-12T00:00:00Z"}'
 ),
 (
   'mit-trader',
-  'MIT Trader',
-  'operator',
-  '["*"]',
-  '["mit"]',
-  NOW(),
-  NOW()
+  '{"id":"mit-trader","displayName":"MIT Trader","role":"operator","sourceEntitlements":["*"],"routeEntitlements":["mit"],"createdAt":"2026-02-12T00:00:00Z","updatedAt":"2026-02-12T00:00:00Z"}'
 )
-ON CONFLICT (id) DO UPDATE SET
-  display_name = EXCLUDED.display_name,
-  role = EXCLUDED.role,
-  source_entitlements = EXCLUDED.source_entitlements,
-  route_entitlements = EXCLUDED.route_entitlements,
-  updated_at = NOW();
+ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload;
 
--- Apply after starting containers:
--- cat scripts/seed-demo-users.sql | docker exec -i policy-signal-timescaledb psql -U postgres -d policy_signal
+-- Verify
+SELECT id, payload->>'displayName' as display_name, payload->>'role' as role FROM policy_signal.user_profiles;
