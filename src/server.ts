@@ -42,6 +42,8 @@ import { SreService } from "./services/sre.js";
 import { PersonalizationService } from "./services/personalization.js";
 import { PilotService } from "./services/pilot.js";
 import { LaunchService } from "./services/launch.js";
+import { MitJsonStore } from "./mit-store.js";
+import { registerMitRoutes } from "./mit-routes.js";
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -372,6 +374,8 @@ async function makeStore(): Promise<Store> {
 async function buildServer() {
   const app = Fastify({ logger: true });
   const store = await makeStore();
+  const mitStore = new MitJsonStore();
+  await mitStore.init();
 
   const registry = new SourceRegistryService(store);
   const pipeline = new SignalPipelineService(store);
@@ -1829,6 +1833,8 @@ async function buildServer() {
     }
     return historicalSources;
   });
+
+  registerMitRoutes(app, { mitStore, store });
 
   return app;
 }
