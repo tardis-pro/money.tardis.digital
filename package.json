@@ -19,6 +19,7 @@
     "e2e:backfill": "node scripts/e2e_backfill.mjs"
   },
   "dependencies": {
+    "@fastify/multipart": "^9.4.0",
     "fast-xml-parser": "^4.5.1",
     "fastify": "^5.2.1",
     "framer-motion": "^12.33.0",
