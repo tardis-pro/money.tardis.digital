@@ -29,6 +29,120 @@ export function computeTechnicalSnapshot(ticker: string, candles: DailyCandle[])
   };
 }
 
+export function ema(candles: DailyCandle[], period: number): number | null {
+  if (candles.length < period) {
+    return null;
+  }
+  const alpha = 2.0 / (period + 1);
+  let ema = candles[candles.length - period]?.close ?? 0;
+  for (let i = candles.length - period + 1; i < candles.length; i += 1) {
+    const close = candles[i]?.close;
+    if (close === undefined) continue;
+    ema = close * alpha + ema * (1 - alpha);
+  }
+  return ema;
+}
+
+export function macd(closes: number[], fastPeriod: number = 12, slowPeriod: number = 26, signalPeriod: number = 9): { macd: number; signal: number; histogram: number } | null {
+  if (closes.length < slowPeriod + signalPeriod) {
+    return null;
+  }
+  const fastEMA = emaFromArray(closes, fastPeriod);
+  const slowEMA = emaFromArray(closes, slowPeriod);
+  if (fastEMA === null || slowEMA === null) return null;
+  
+  const macdLine = fastEMA - slowEMA;
+  const macdArray: number[] = [macdLine];
+  for (let i = 1; i < closes.length; i += 1) {
+    const subFast = emaFromArray(closes.slice(0, i + 1), fastPeriod);
+    const subSlow = emaFromArray(closes.slice(0, i + 1), slowPeriod);
+    if (subFast !== null && subSlow !== null) {
+      macdArray.push(subFast - subSlow);
+    }
+  }
+  
+  const signalEMA = emaFromArray(macdArray, signalPeriod);
+  if (signalEMA === null) return null;
+  
+  return {
+    macd: macdLine,
+    signal: signalEMA,
+    histogram: macdLine - signalEMA,
+  };
+}
+
+function emaFromArray(values: number[], period: number): number | null {
+  if (values.length < period) return null;
+  const alpha = 2.0 / (period + 1);
+  let emaVal: number = values[values.length - period] ?? 0;
+  for (let i = values.length - period + 1; i < values.length; i += 1) {
+    const val = values[i];
+    if (val === undefined) continue;
+    emaVal = val * alpha + emaVal * (1 - alpha);
+  }
+  return emaVal;
+}
+
+export function cci(highs: number[], lows: number[], closes: number[], period: number = 20): number | null {
+  if (highs.length < period || lows.length < period || closes.length < period) {
+    return null;
+  }
+  const typicalPrices: number[] = [];
+  for (let i = 0; i < highs.length; i += 1) {
+    const h = highs[i];
+    const l = lows[i];
+    const c = closes[i];
+    if (h !== undefined && l !== undefined && c !== undefined) {
+      typicalPrices.push((h + l + c) / 3);
+    }
+  }
+  if (typicalPrices.length < period) return null;
+  const recentTP = typicalPrices.slice(-period);
+  const smaTP = recentTP.reduce((sum, v) => sum + v, 0) / period;
+  const meanDev = recentTP.reduce((sum, v) => sum + Math.abs(v - smaTP), 0) / period;
+  if (meanDev === 0) return null;
+  const lastTP = typicalPrices[typicalPrices.length - 1];
+  if (lastTP === undefined) return null;
+  return (lastTP - smaTP) / (0.015 * meanDev);
+}
+
+export function detectPattern(candles: DailyCandle[]): string {
+  if (candles.length < 3) return "None";
+  const latest = candles[candles.length - 1];
+  const prev = candles[candles.length - 2];
+  if (!latest || !prev) return "None";
+  
+  const latestBody = Math.abs(latest.close - latest.open);
+  const latestRange = Math.max(latest.high - latest.low, 0.0001);
+  const lowerWick = Math.min(latest.open, latest.close) - latest.low;
+  const upperWick = latest.high - Math.max(latest.open, latest.close);
+  
+  // Bullish Engulfing
+  const prevBullish = prev.close > prev.open;
+  const latestBullish = latest.close > latest.open;
+  if (prevBullish && !latestBullish && latest.open <= prev.close && latest.close >= prev.open) {
+    return "Bullish Engulfing";
+  }
+  
+  // Hammer
+  if (lowerWick > latestBody * 2 && upperWick < latestBody && latestBody / latestRange < 0.5) {
+    return "Hammer";
+  }
+  
+  // Doji
+  if (latestBody / latestRange < 0.1) {
+    return "Doji";
+  }
+  
+  // Breakout detection
+  const prev20High = Math.max(...candles.slice(-21, -1).map(c => c.high));
+  if (latest.close > prev20High) {
+    return "Breakout";
+  }
+  
+  return "None";
+}
+
 export function sma(candles: DailyCandle[], period: number): number | null {
   if (candles.length < period) {
     return null;

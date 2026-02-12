@@ -24,9 +24,10 @@ const USERS = [
   { id: "demo-analyst", label: "Analyst", role: "analyst" },
   { id: "demo-viewer", label: "Viewer", role: "viewer" },
   { id: "demo-admin", label: "Admin", role: "admin" },
+  { id: "mit-trader", label: "MIT Trader", role: "operator" },
 ] as const;
 
-let activeUserId = "demo-analyst";
+let activeUserId = "mit-trader";
 
 async function fetchJSON(url: string, options?: RequestInit) {
   const response = await fetch(url, {
@@ -107,7 +108,7 @@ function StatCell({ label, value, sub, accent }: { label: string; value: string 
 }
 
 export function App() {
-  const [userId, setUserId] = useState("demo-analyst");
+  const [userId, setUserId] = useState("mit-trader");
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");

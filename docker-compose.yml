@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   timescaledb:
-    image: timescale/timescaledb:latest-pg16
+    image: timescale/timescaledb:latest-pg18
     container_name: policy-signal-timescaledb
     ports:
       - "0.0.0.0:5432:5432"
@@ -21,7 +21,7 @@ services:
       retries: 10
 
   windmill-db:
-    image: postgres:16
+    image: postgres:18
     container_name: policy-signal-windmill-db
     ports:
       - "0.0.0.0:5433:5432"

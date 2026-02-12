@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Store } from "./store.js";
 import type { MitStore } from "./mit-store.js";
-import type { MitUniverseEntry } from "./mit-types.js";
+import type { MitUniverseEntry, MitWatchlistIdea, EntryExitPlan } from "./mit-types.js";
 import mitUniverse from "./config/mit-universe.json" with { type: "json" };
 import { evaluateNtLiteChecklist } from "./services/mit/nt-lite-checklist.js";
 import { computePeerMedianPEBySector, peerMedianForTicker } from "./services/mit/peer-comparison.js";
@@ -12,6 +12,7 @@ import { MarketDataService } from "./services/mit/market-data.js";
 import { computeTechnicalSnapshot } from "./services/mit/technical-indicators.js";
 import { scoreComposite } from "./services/mit/composite-scorer.js";
 import { computeEntryExitPlan } from "./services/mit/entry-exit-calc.js";
+import { MITScreeniPyService, enrichWithMITScores, mapScreeniPyToTechnical } from "./services/mit/screenipy-mit-connector.js";
 import { MitPortfolioService } from "./services/mit/portfolio-service.js";
 import { MitTradeManager } from "./services/mit/trade-manager.js";
 import { refreshPortfolioPnl } from "./services/mit/pnl-ledger.js";
@@ -84,12 +85,64 @@ const settingsSchema = z.object({
 });
 
 const runStatus = new Map<string, { status: "started" | "completed" | "failed"; result?: unknown; error?: string }>();
+let screenipyCache: { rows: ReturnType<typeof enrichWithMITScores>; fetchedAt: string } | null = null;
+const SCREENIPY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitStore; store: Store }): void {
   const marketData = new MarketDataService();
+  const screeniPyService = new MITScreeniPyService();
   const portfolioService = new MitPortfolioService();
   const tradeManager = new MitTradeManager();
   const universe = mitUniverse as MitUniverseEntry[];
+
+  // Screenipy real-data scan endpoints
+  app.get("/api/mit/screenipy/run", async (request, reply) => {
+    const query = request.query as { tickerOption?: string; executeOption?: string };
+    const tickerOption = query.tickerOption ?? "1";
+    const executeOption = query.executeOption ?? "0";
+    
+    try {
+      const rows = await screeniPyService.runScan({ tickerOption, executeOption });
+      screenipyCache = { rows, fetchedAt: new Date().toISOString() };
+      return {
+        scannedAt: screenipyCache.fetchedAt,
+        totalScanned: rows.length,
+        candidates: rows.sort((a, b) => (b.mitOverallScore ?? 0) - (a.mitOverallScore ?? 0)).slice(0, 50),
+      };
+    } catch (error) {
+      return reply.code(500).send({ error: error instanceof Error ? error.message : "Scan failed" });
+    }
+  });
+
+  app.get("/api/mit/screenipy/latest", async () => {
+    if (!screenipyCache) {
+      return { error: "No cached scan. Run /api/mit/screenipy/run first." };
+    }
+    return screenipyCache;
+  });
+
+  app.get("/api/mit/screenipy/candidates", async (request) => {
+    const query = request.query as { limit?: string; feed?: string };
+    if (!screenipyCache) {
+      return { error: "No cached scan" };
+    }
+    const limit = parseInt(query.limit ?? "20", 10);
+    const feed = query.feed ?? "all";
+    
+    let filtered = screenipyCache.rows;
+    if (feed === "nt-lite") {
+      filtered = screenipyCache.rows.filter(r => (r.mitQualityScore ?? 0) >= 60);
+    } else if (feed === "quant") {
+      filtered = screenipyCache.rows.filter(r => (r.mitMomentumScore ?? 0) >= 70);
+    }
+    
+    return {
+      scannedAt: screenipyCache.fetchedAt,
+      feed,
+      count: filtered.length,
+      candidates: filtered.slice(0, limit),
+    };
+  });
 
   app.get("/api/mit/fundamentals/:ticker", async (request, reply) => {
     const ticker = String((request.params as { ticker?: string }).ticker ?? "").toUpperCase();
@@ -239,59 +292,147 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
 
     (async () => {
       try {
+        // Run screenipy scan first for real market data
+        let screenipyRows: ReturnType<typeof enrichWithMITScores> = [];
+        try {
+          screenipyRows = await screeniPyService.runScan({ tickerOption: "5", executeOption: "0" });
+          screenipyCache = { rows: screenipyRows, fetchedAt: new Date().toISOString() };
+        } catch (e) {
+          console.warn("Screenipy scan failed, using fallback", e);
+        }
+
         await deps.mitStore.transaction(async (draft) => {
           const technicals: typeof draft.technicals = {};
           const scores: typeof draft.compositeScores = {};
-          const ideas: typeof draft.dailyRuns[number]["ideas"] = [];
+          const ntLiteIdeas: typeof draft.dailyRuns[number]["ideas"] = [];
+          const quantIdeas: typeof draft.dailyRuns[number]["ideas"] = [];
           const tickers = [...new Set(universe.map((u) => u.ticker))];
 
+          // Build ticker -> screenipy data map
+          const screenipyMap = new Map<string, ReturnType<typeof enrichWithMITScores>[0]>();
+          for (const row of screenipyRows) {
+            screenipyMap.set(row.stock, row);
+          }
+
           for (const ticker of tickers) {
-            const candles = await marketData.fetchCandles(ticker, 300).catch(() => []);
+            // Prefer screenipy data, fallback to market data
+            const screenipyRow = screenipyMap.get(ticker);
+            const candles = screenipyRow 
+              ? await marketData.fetchCandles(ticker, 300).catch(() => [])
+              : await marketData.fetchCandles(ticker, 300).catch(() => []);
+            
+            if (candles.length === 0 && !screenipyRow) continue;
+            
             draft.candles[ticker] = candles.slice(-300);
-            const t = computeTechnicalSnapshot(ticker, candles);
-            if (!t) {
-              continue;
+            
+            // Use screenipy technicals if available, else compute from candles
+            let t = screenipyRow 
+              ? mapScreeniPyToTechnical(screenipyRow as any, ticker)
+              : computeTechnicalSnapshot(ticker, candles);
+            
+            if (!t && !screenipyRow) continue;
+            
+            // Use screenipy data for technicals if available
+            if (screenipyRow) {
+              t = {
+                ticker,
+                computedAt: new Date().toISOString(),
+                dma20: parseFloat(screenipyRow.ema20 || screenipyRow.sma20 || "0") || null,
+                dma50: parseFloat(screenipyRow.ema50 || screenipyRow.sma50 || "0") || null,
+                dma100: null,
+                dma200: null,
+                rsi14: parseFloat(screenipyRow.rsi || "0") || null,
+                atr14: parseFloat(screenipyRow.atr14 || "0") || null,
+                returnZScore20d: null,
+                priceVsDma50Pct: t?.dma50 ? ((parseFloat(screenipyRow.ltp || "0") - t.dma50) / t.dma50 * 100) : null,
+                priceVsDma200Pct: null,
+                pullback5d: null,
+                latestClose: parseFloat(screenipyRow.ltp || "0") || 0,
+                latestVolume: parseFloat(screenipyRow.volume || "0") || 0,
+              };
             }
-            technicals[ticker] = t;
+            
+            technicals[ticker] = t!;
             const f = draft.fundamentals[ticker];
-            if (!f) {
-              continue;
-            }
             const peer = peerMedianForTicker(ticker, universe.map((u) => ({ ticker: u.ticker, sector: u.sector })), draft.peerMedianPE);
+            const screenipyScore = screenipyRow 
+              ? { quality: screenipyRow.mitQualityScore, momentum: screenipyRow.mitMomentumScore }
+              : null;
+
             const score = scoreComposite({
               ticker,
-              fundamentals: f,
-              technicals: t,
+              fundamentals: f!,
+              technicals: t!,
               peerMedianPE: peer,
               promoterHoldingTrendStable: true,
             });
             scores[ticker] = score;
+
             const plan = computeEntryExitPlan({
               ticker,
               feed: "nt-lite",
-              technicals: t,
+              technicals: t!,
               candles,
               stopPct: draft.portfolio.settings.stopPct,
               trailingActivationPct: draft.portfolio.settings.trailingActivationPct,
             });
-            if (!plan) {
-              continue;
+            if (!plan) continue;
+
+            // NT-LITE ideas: checklist + quality focus
+            if (f) {
+              const ntLiteScore = score.breakdown.quality + score.breakdown.governance;
+              if (ntLiteScore >= 50) {
+                const checklist = evaluateNtLiteChecklist(f, { sector: universe.find(u => u.ticker === ticker)?.sector ?? null, peerMedianPE: peer });
+                ntLiteIdeas.push({
+                  id: `mit-idea-${ticker}-${Date.now()}`,
+                  date: new Date().toISOString().slice(0, 10),
+                  ticker,
+                  feed: "nt-lite",
+                  thesis: generateNtLiteThesis(checklist, screenipyRow, t!),
+                  compositeScore: score,
+                  entryExitPlan: plan,
+                  technicals: t!,
+                  fundamentals: f,
+                  momentumLabel: generateMomentumLabel(screenipyRow, t!),
+                  risks: [],
+                  isAvoid: false,
+                  avoidReason: null,
+                });
+              }
             }
-            ideas.push({
-              id: `mit-idea-${ticker}-${Date.now()}`,
-              date: new Date().toISOString().slice(0, 10),
-              ticker,
-              feed: "nt-lite",
-              thesis: ["Checklist and composite conditions satisfied"],
-              compositeScore: score,
-              entryExitPlan: plan,
-              technicals: t,
-              fundamentals: f,
-              momentumLabel: `RSI ${(t.rsi14 ?? 0).toFixed(1)}`,
-              risks: [],
-              isAvoid: false,
-              avoidReason: null,
-            });
+
+            // QUANT ideas: momentum focus (return Z-score top decile)
+            const zScore = t!.returnZScore20d;
+            const priceAboveDma100 = t!.dma100 ? t!.latestClose > t!.dma100 : false;
+            const pullback = t!.pullback5d ?? 1;
+            const isTopMomentum = zScore !== null && zScore >= 1.28; // Top decile
+            const isValidQuant = priceAboveDma100 && isTopMomentum && pullback < 0.05;
+            
+            if (isValidQuant && score.breakdown.momentum >= 50) {
+              quantIdeas.push({
+                id: `mit-quant-${ticker}-${Date.now()}`,
+                date: new Date().toISOString().slice(0, 10),
+                ticker,
+                feed: "quant",
+                thesis: generateQuantThesis(t!, zScore, pullback),
+                compositeScore: score,
+                entryExitPlan: plan,
+                technicals: t!,
+                fundamentals: f ?? { ticker, fetchedAt: "", source: "manual" as const, revenueHistory: [], epsHistory: [], opmHistory: [], debtToEquity: null, interestCoverage: null, roce: null, roe: null, fcfHistory: [], pe: null, peg: null, marketCap: null, promoterHoldingPct: null, promoterPledgePct: null, auditorRemarks: "unknown" as const, revenueCAGR_3y: null, revenueCAGR_5y: null, epsCAGR_3y: null, epsCAGR_5y: null },
+                momentumLabel: `Z:${(zScore ?? 0).toFixed(2)} DMA100:${priceAboveDma100 ? "↑" : "↓"}`,
+                risks: [],
+                isAvoid: false,
+                avoidReason: null,
+              });
+            }
+          }
+
+          // Merge ideas (prioritize NT-LITE, add Quant as secondary)
+          const ideas = [...ntLiteIdeas];
+          for (const q of quantIdeas) {
+            if (!ideas.some(i => i.ticker === q.ticker)) {
+              ideas.push(q);
+            }
           }
 
           upsertDailyRun({ state: draft, technicals, fundamentals: draft.fundamentals, scores, ideas });
@@ -593,5 +734,104 @@ function compactConfirm(input: { positionId: string; entryPrice: number; entryDa
   };
   if (input.entryDate !== undefined) out.entryDate = input.entryDate;
   return out;
+}
+
+function generateNtLiteThesis(
+  checklist: NonNullable<ReturnType<typeof evaluateNtLiteChecklist>>,
+  screenipyRow: NonNullable<ReturnType<typeof enrichWithMITScores>[0]> | undefined,
+  _technicals: NonNullable<ReturnType<typeof mapScreeniPyToTechnical>>
+): string[] {
+  const thesis: string[] = [];
+  const items = checklist.items;
+
+  if (items["valuation-sane"]?.pass) thesis.push(`Valuation acceptable (${items["valuation-sane"].value})`);
+  if (items["roce-above-15"]?.pass) thesis.push(`Return metrics strong (${items["roce-above-15"].value})`);
+  if (items["manageable-leverage"]?.pass) thesis.push(`Leverage manageable (${items["manageable-leverage"].value})`);
+  if (items["improving-opm"]?.pass) thesis.push(`Operating margin positive (${items["improving-opm"].value})`);
+  if (items["promoter-stable"]?.pass) thesis.push(`Promoter alignment (${items["promoter-stable"].value})`);
+  if (items["clean-audit"]?.pass) thesis.push(`Audit clean (${items["clean-audit"].value})`);
+  if (items["rising-revenue-eps"]?.pass) thesis.push(`Growth trend (${items["rising-revenue-eps"].value})`);
+  if (items["strong-fcf"]?.pass) thesis.push(`Free cash flow strong (${items["strong-fcf"].value})`);
+
+  if (screenipyRow?.trend === "Strong Up") thesis.push(`Strong uptrend (DMA alignment)`);
+  if (screenipyRow?.trend === "Up") thesis.push(`Uptrend confirmed`);
+  if (screenipyRow?.pattern && screenipyRow.pattern !== "None") thesis.push(`${screenipyRow.pattern} pattern`);
+  if (screenipyRow?.rsi) {
+    const rsi = parseFloat(screenipyRow.rsi);
+    if (rsi >= 45 && rsi <= 65) thesis.push(`RSI ${rsi.toFixed(1)} in sweet spot`);
+  }
+  if (screenipyRow?.macd && screenipyRow.macdSignal) {
+    const macd = parseFloat(screenipyRow.macd);
+    const signal = parseFloat(screenipyRow.macdSignal);
+    if (macd > signal) thesis.push(`MACD bullish crossover`);
+  }
+
+  if (thesis.length === 0) {
+    thesis.push(`Quality checklist ${checklist.passCount}/${checklist.totalItems} passed`);
+  }
+
+  return thesis;
+}
+
+function generateQuantThesis(
+  technicals: NonNullable<ReturnType<typeof mapScreeniPyToTechnical>>,
+  zScore: number | null,
+  pullbackPct: number
+): string[] {
+  const thesis: string[] = [];
+
+  if (zScore !== null && zScore >= 1.28) {
+    thesis.push(`Momentum Z-Score ${zScore.toFixed(2)} (top decile)`);
+  }
+
+  if (technicals.dma100 && technicals.latestClose > technicals.dma100) {
+    thesis.push(`Price above DMA100`);
+  }
+
+  if (technicals.rsi14) {
+    const rsi = technicals.rsi14;
+    if (rsi >= 50 && rsi <= 75) thesis.push(`RSI ${rsi.toFixed(1)} in momentum zone`);
+  }
+
+  if (technicals.dma20 && technicals.dma50 && technicals.dma20 > technicals.dma50) {
+    thesis.push(`Golden cross (DMA20 > DMA50)`);
+  }
+
+  if (pullbackPct > 0 && pullbackPct < 0.05) {
+    thesis.push(`Pullback ${(pullbackPct * 100).toFixed(1)}% within buy zone`);
+  }
+
+  if (technicals.atr14 && technicals.latestClose) {
+    const atrPct = (technicals.atr14 / technicals.latestClose) * 100;
+    thesis.push(`ATR ${atrPct.toFixed(1)}% volatility`);
+  }
+
+  return thesis;
+}
+
+function generateMomentumLabel(
+  screenipyRow: NonNullable<ReturnType<typeof enrichWithMITScores>[0]> | undefined,
+  technicals: NonNullable<ReturnType<typeof mapScreeniPyToTechnical>>
+): string {
+  const parts: string[] = [];
+
+  if (screenipyRow?.rsi) {
+    parts.push(`RSI:${screenipyRow.rsi}`);
+  } else if (technicals.rsi14) {
+    parts.push(`RSI:${technicals.rsi14.toFixed(1)}`);
+  }
+
+  if (screenipyRow?.trend) {
+    parts.push(screenipyRow.trend);
+  } else if (technicals.dma20 && technicals.dma50) {
+    const dmaCross = technicals.dma20 > technicals.dma50 ? "↑" : "↓";
+    parts.push(`DMA${dmaCross}`);
+  }
+
+  if (screenipyRow?.pattern && screenipyRow.pattern !== "None") {
+    parts.push(screenipyRow.pattern);
+  }
+
+  return parts.join(" | ");
 }
 

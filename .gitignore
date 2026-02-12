@@ -4,3 +4,5 @@ data/
 .DS_Store
 *.log
 .agents/
+.venv/
+.venv311/

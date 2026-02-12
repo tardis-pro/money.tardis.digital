@@ -5,10 +5,51 @@ Real-time intelligence platform for tracking and analyzing India policy signals 
 ## Quick Start
 
 ```bash
+# 1) Install dependencies
 npm install
+
+# 2) Configure environment
+cp .env.example .env
+
+# 3) Start API + UI dev servers
 npm run dev
+
+# 4) In another terminal, run end-to-end backfill smoke test
 npm run e2e:backfill
-# Open http://localhost:3000
+```
+
+- API + SSR UI: `http://localhost:3000`
+- Vite UI (HMR): `http://localhost:5173`
+
+## Run End-to-End
+
+The end-to-end backfill script (`npm run e2e:backfill`) calls these API flows in order:
+
+1. `POST /api/backfill/notable/preview`
+2. `POST /api/backfill/notable`
+3. `GET /api/backfill/runs`
+4. `POST /api/anomalies/correlate`
+
+If your server is not on port `3000`, set:
+
+```bash
+E2E_BASE_URL=http://localhost:<port> npm run e2e:backfill
+```
+
+For a larger historical load (not just smoke test):
+
+```bash
+npm run data:load
+```
+
+## Optional PostgreSQL / Timescale Setup
+
+```bash
+docker compose up -d timescaledb
+cp .env.example .env
+# then set STORE_BACKEND=postgres in .env
+npm run migrate
+npm run dev
 ```
 
 ## What It Does
