@@ -43,6 +43,8 @@ import { PersonalizationService } from "./services/personalization.js";
 import { PilotService } from "./services/pilot.js";
 import { LaunchService } from "./services/launch.js";
 import { MitJsonStore } from "./mit-store.js";
+import type { MitStore } from "./mit-store.js";
+import { MitPostgresStore } from "./mit-store-postgres.js";
 import { registerMitRoutes } from "./mit-routes.js";
 
 const isDev = process.env.NODE_ENV !== "production";
@@ -374,7 +376,9 @@ async function makeStore(): Promise<Store> {
 async function buildServer() {
   const app = Fastify({ logger: true });
   const store = await makeStore();
-  const mitStore = new MitJsonStore();
+  const mitStore: MitStore = (process.env.STORE_BACKEND ?? "json") === "postgres"
+    ? new MitPostgresStore()
+    : new MitJsonStore();
   await mitStore.init();
 
   const registry = new SourceRegistryService(store);
@@ -1834,7 +1838,17 @@ async function buildServer() {
     return historicalSources;
   });
 
-  registerMitRoutes(app, { mitStore, store });
+  // Register MIT routes inside a scoped plugin so the onRequest auth hook
+  // only fires for /api/mit/* routes, not every route in the app.
+  await app.register(async (scoped) => {
+    scoped.addHook("onRequest", async (request, reply) => {
+      const access = await ensureRouteAccess(request, reply, "mit");
+      if (!access.allowed) {
+        return access.response;
+      }
+    });
+    registerMitRoutes(scoped, { mitStore, store });
+  });
 
   return app;
 }

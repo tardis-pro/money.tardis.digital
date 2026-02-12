@@ -270,7 +270,16 @@ export interface MitDailyRunResult {
   universeSize: number;
   screenedCount: number;
   marketTone: MitMarketTone;
+  anomalies: MitAnomaly[];
   errors: string[];
+}
+
+export interface MitAnomaly {
+  ticker: string;
+  date: string;
+  type: "price-shock" | "volume-spike" | "volatility-spike";
+  score: number;
+  detail: string;
 }
 
 // === Reports ===

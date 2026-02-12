@@ -134,6 +134,15 @@ function defaultUserProfiles(at: string): UserProfile[] {
       createdAt: at,
       updatedAt: at,
     },
+    {
+      id: "mit-trader",
+      displayName: "MIT Trader",
+      role: "operator",
+      sourceEntitlements: ["*"],
+      routeEntitlements: ["overview", "signals", "heatmap", "alerts", "supply-chain", "watchlists", "mit", "system"],
+      createdAt: at,
+      updatedAt: at,
+    },
   ];
 }
 
@@ -173,6 +182,13 @@ export class JsonStore implements Store {
       existing.userProfiles = defaultUserProfiles(new Date().toISOString());
       dirty = true;
     } else {
+      const defaultProfiles = defaultUserProfiles(new Date().toISOString());
+      for (const defaultProfile of defaultProfiles) {
+        if (!existing.userProfiles.some((profile) => profile.id === defaultProfile.id)) {
+          existing.userProfiles.push(defaultProfile);
+          dirty = true;
+        }
+      }
       for (const profile of existing.userProfiles) {
         if (!profile.routeEntitlements.includes("mit")) {
           profile.routeEntitlements.push("mit");

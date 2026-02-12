@@ -76,7 +76,7 @@ export function mapScreeniPyToTechnical(row: ScreeniPyRow, ticker: string): Tech
   };
 }
 
-export function enrichWithMITScores(rows: ScreeniPyRow[]): MITScreeniPyRow[] {
+export function enrichWithMITScores(rows: ScreeniPyRow[], options?: { fundamentalsTickers?: Set<string> }): MITScreeniPyRow[] {
   return rows.map((row) => {
     const rsi = parseFloat(row.rsi || "0");
     const ema20 = parseFloat(row.ema20 || "0");
@@ -131,8 +131,9 @@ export function enrichWithMITScores(rows: ScreeniPyRow[]): MITScreeniPyRow[] {
     qualityScore = Math.max(0, Math.min(100, qualityScore));
     momentumScore = Math.max(0, Math.min(100, momentumScore));
     
+    const stock = (row.stock || row.Stock || "UNKNOWN").toUpperCase();
     return {
-      stock: row.stock || row.Stock || "UNKNOWN",
+      stock,
       ltp: row.ltp || "",
       volume: row.volume || "",
       rsi: row.rsi || "",
@@ -149,7 +150,7 @@ export function enrichWithMITScores(rows: ScreeniPyRow[]): MITScreeniPyRow[] {
       mitQualityScore: qualityScore,
       mitMomentumScore: momentumScore,
       mitOverallScore: Math.round((qualityScore * 0.4 + momentumScore * 0.6)),
-      fundamentalsAvailable: false,
+      fundamentalsAvailable: options?.fundamentalsTickers?.has(stock) ?? false,
     };
   });
 }

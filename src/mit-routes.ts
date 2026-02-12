@@ -21,6 +21,10 @@ import { holdingsCsv, closedTradesCsv } from "./services/mit/csv-export.js";
 import { buildWeeklyReport } from "./services/mit/weekly-report.js";
 import { buildMonthlyReport } from "./services/mit/monthly-report.js";
 import { upsertDailyRun } from "./services/mit/daily-pipeline.js";
+import { evaluateHardGovernanceFilters } from "./services/mit/governance-filter.js";
+import { detectMarketMode } from "./services/mit/market-mode.js";
+import { detectMitAnomalies } from "./services/mit/anomaly-detector.js";
+import { FundamentalsProviderService } from "./services/mit/fundamentals-provider.js";
 
 const manualFundamentalSchema = z.object({
   ticker: z.string().min(1),
@@ -87,13 +91,30 @@ const settingsSchema = z.object({
 const runStatus = new Map<string, { status: "started" | "completed" | "failed"; result?: unknown; error?: string }>();
 let screenipyCache: { rows: ReturnType<typeof enrichWithMITScores>; fetchedAt: string } | null = null;
 const SCREENIPY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const IST_REFRESH_SLOTS = (process.env.MIT_INTRADAY_REFRESH_SLOTS ?? "10:00,12:30,14:45")
+  .split(",")
+  .map((value) => value.trim())
+  .filter((value) => /^\d{2}:\d{2}$/.test(value));
+
+const schedulerState: {
+  started: boolean;
+  doneSlots: Set<string>;
+  timer: NodeJS.Timeout | null;
+} = {
+  started: false,
+  doneSlots: new Set<string>(),
+  timer: null,
+};
 
 export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitStore; store: Store }): void {
   const marketData = new MarketDataService();
   const screeniPyService = new MITScreeniPyService();
+  const fundamentalsProvider = new FundamentalsProviderService();
   const portfolioService = new MitPortfolioService();
   const tradeManager = new MitTradeManager();
   const universe = mitUniverse as MitUniverseEntry[];
+
+  setupIntradayPriceScheduler(deps, marketData);
 
   // Screenipy real-data scan endpoints
   app.get("/api/mit/screenipy/run", async (request, reply) => {
@@ -103,11 +124,14 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
     
     try {
       const rows = await screeniPyService.runScan({ tickerOption, executeOption });
-      screenipyCache = { rows, fetchedAt: new Date().toISOString() };
+      const state = await deps.mitStore.read();
+      const fundamentalsTickers = new Set(Object.keys(state.fundamentals).map((ticker) => ticker.toUpperCase()));
+      const enriched = rows.map((row) => ({ ...row, fundamentalsAvailable: fundamentalsTickers.has(row.stock.toUpperCase()) }));
+      screenipyCache = { rows: enriched, fetchedAt: new Date().toISOString() };
       return {
         scannedAt: screenipyCache.fetchedAt,
-        totalScanned: rows.length,
-        candidates: rows.sort((a, b) => (b.mitOverallScore ?? 0) - (a.mitOverallScore ?? 0)).slice(0, 50),
+        totalScanned: enriched.length,
+        candidates: enriched.sort((a, b) => (b.mitOverallScore ?? 0) - (a.mitOverallScore ?? 0)).slice(0, 50),
       };
     } catch (error) {
       return reply.code(500).send({ error: error instanceof Error ? error.message : "Scan failed" });
@@ -244,6 +268,30 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
     return { ok: true };
   });
 
+  app.post("/api/mit/fundamentals/refresh", async (request, reply) => {
+    const body = request.body as { tickers?: string[]; limit?: number } | undefined;
+    const state = await deps.mitStore.read();
+    const universeTickers = universe.map((entry) => entry.ticker.toUpperCase());
+    const chosen = (body?.tickers && body.tickers.length > 0
+      ? body.tickers.map((ticker) => ticker.toUpperCase())
+      : universeTickers).filter((ticker) => universeTickers.includes(ticker));
+    const limit = Math.max(1, Math.min(500, body?.limit ?? chosen.length));
+
+    const refresh = await fundamentalsProvider.refreshTickers(chosen.slice(0, limit));
+    await deps.mitStore.transaction((draft) => {
+      for (const snapshot of refresh.updated) {
+        draft.fundamentals[snapshot.ticker] = snapshot;
+      }
+      return null;
+    });
+    return {
+      requested: Math.min(chosen.length, limit),
+      updated: refresh.updated.length,
+      failed: refresh.failed,
+      knownFundamentals: Object.keys(state.fundamentals).length + refresh.updated.length,
+    };
+  });
+
   app.get("/api/mit/technicals/:ticker", async (request, reply) => {
     const ticker = String((request.params as { ticker?: string }).ticker ?? "").toUpperCase();
     const state = await deps.mitStore.read();
@@ -279,6 +327,7 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
       candles,
       stopPct: state.portfolio.settings.stopPct,
       trailingActivationPct: state.portfolio.settings.trailingActivationPct,
+      marketTone: state.marketTone,
     });
     if (!plan) {
       return reply.code(404).send({ error: "No plan" });
@@ -292,10 +341,26 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
 
     (async () => {
       try {
+        const policyState = await deps.store.read();
+        const recentSignals = policyState.signals.slice(0, 120);
+        const pipelineTickers = [...new Set(universe.map((entry) => entry.ticker.toUpperCase()))];
+        const prePipelineState = await deps.mitStore.read();
+        const missingFundamentals = pipelineTickers.filter((ticker) => !prePipelineState.fundamentals[ticker]);
+        const fundamentalsRefresh = missingFundamentals.length > 0
+          ? await fundamentalsProvider.refreshTickers(missingFundamentals)
+          : { updated: [], failed: [] as Array<{ ticker: string; error: string }> };
+        const fundamentalsTickers = new Set(
+          [
+            ...Object.keys(prePipelineState.fundamentals).map((ticker) => ticker.toUpperCase()),
+            ...fundamentalsRefresh.updated.map((snapshot) => snapshot.ticker.toUpperCase()),
+          ],
+        );
+
         // Run screenipy scan first for real market data
         let screenipyRows: ReturnType<typeof enrichWithMITScores> = [];
         try {
-          screenipyRows = await screeniPyService.runScan({ tickerOption: "5", executeOption: "0" });
+          const rawRows = await screeniPyService.runScan({ tickerOption: "5", executeOption: "0" });
+          screenipyRows = rawRows.map((row) => ({ ...row, fundamentalsAvailable: fundamentalsTickers.has(row.stock.toUpperCase()) }));
           screenipyCache = { rows: screenipyRows, fetchedAt: new Date().toISOString() };
         } catch (e) {
           console.warn("Screenipy scan failed, using fallback", e);
@@ -307,6 +372,11 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
           const ntLiteIdeas: typeof draft.dailyRuns[number]["ideas"] = [];
           const quantIdeas: typeof draft.dailyRuns[number]["ideas"] = [];
           const tickers = [...new Set(universe.map((u) => u.ticker))];
+          const marketMode = await detectMarketMode(draft.technicals);
+
+          for (const snapshot of fundamentalsRefresh.updated) {
+            draft.fundamentals[snapshot.ticker.toUpperCase()] = snapshot;
+          }
 
           // Build ticker -> screenipy data map
           const screenipyMap = new Map<string, ReturnType<typeof enrichWithMITScores>[0]>();
@@ -315,59 +385,58 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
           }
 
           for (const ticker of tickers) {
-            // Prefer screenipy data, fallback to market data
             const screenipyRow = screenipyMap.get(ticker);
-            const candles = screenipyRow 
-              ? await marketData.fetchCandles(ticker, 300).catch(() => [])
-              : await marketData.fetchCandles(ticker, 300).catch(() => []);
-            
+            const existingCandles = draft.candles[ticker] ?? [];
+            const candles = existingCandles.length >= 220
+              ? existingCandles
+              : await marketData.fetchCandles(ticker, 300).catch(() => existingCandles);
+
             if (candles.length === 0 && !screenipyRow) continue;
-            
+
             draft.candles[ticker] = candles.slice(-300);
-            
-            // Use screenipy technicals if available, else compute from candles
-            let t = screenipyRow 
-              ? mapScreeniPyToTechnical(screenipyRow as any, ticker)
-              : computeTechnicalSnapshot(ticker, candles);
-            
-            if (!t && !screenipyRow) continue;
-            
-            // Use screenipy data for technicals if available
+
+            const baseTechnicals = computeTechnicalSnapshot(ticker, candles);
+            if (!baseTechnicals && !screenipyRow) continue;
+
+            let t = baseTechnicals;
             if (screenipyRow) {
+              const ltp = parseFloat(screenipyRow.ltp || "0") || (baseTechnicals?.latestClose ?? 0);
+              const dma20 = parseFloat(screenipyRow.ema20 || screenipyRow.sma20 || "0") || null;
+              const dma50 = parseFloat(screenipyRow.ema50 || screenipyRow.sma50 || "0") || null;
               t = {
                 ticker,
                 computedAt: new Date().toISOString(),
-                dma20: parseFloat(screenipyRow.ema20 || screenipyRow.sma20 || "0") || null,
-                dma50: parseFloat(screenipyRow.ema50 || screenipyRow.sma50 || "0") || null,
-                dma100: null,
-                dma200: null,
+                dma20,
+                dma50,
+                dma100: baseTechnicals?.dma100 ?? null,
+                dma200: baseTechnicals?.dma200 ?? null,
                 rsi14: parseFloat(screenipyRow.rsi || "0") || null,
                 atr14: parseFloat(screenipyRow.atr14 || "0") || null,
-                returnZScore20d: null,
-                priceVsDma50Pct: t?.dma50 ? ((parseFloat(screenipyRow.ltp || "0") - t.dma50) / t.dma50 * 100) : null,
-                priceVsDma200Pct: null,
-                pullback5d: null,
-                latestClose: parseFloat(screenipyRow.ltp || "0") || 0,
+                returnZScore20d: baseTechnicals?.returnZScore20d ?? null,
+                priceVsDma50Pct: dma50 ? ((ltp - dma50) / dma50) * 100 : baseTechnicals?.priceVsDma50Pct ?? null,
+                priceVsDma200Pct: baseTechnicals?.priceVsDma200Pct ?? null,
+                pullback5d: baseTechnicals?.pullback5d ?? null,
+                latestClose: ltp,
                 latestVolume: parseFloat(screenipyRow.volume || "0") || 0,
               };
             }
-            
+
             technicals[ticker] = t!;
             const f = draft.fundamentals[ticker];
+            if (!f) {
+              continue;
+            }
             const peer = peerMedianForTicker(ticker, universe.map((u) => ({ ticker: u.ticker, sector: u.sector })), draft.peerMedianPE);
-            const screenipyScore = screenipyRow 
-              ? { quality: screenipyRow.mitQualityScore, momentum: screenipyRow.mitMomentumScore }
-              : null;
-
             const score = scoreComposite({
               ticker,
-              fundamentals: f!,
+              fundamentals: f,
               technicals: t!,
               peerMedianPE: peer,
               promoterHoldingTrendStable: true,
             });
             scores[ticker] = score;
 
+            const currentTone = marketMode.mode;
             const plan = computeEntryExitPlan({
               ticker,
               feed: "nt-lite",
@@ -375,30 +444,43 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
               candles,
               stopPct: draft.portfolio.settings.stopPct,
               trailingActivationPct: draft.portfolio.settings.trailingActivationPct,
+              marketTone: currentTone,
             });
             if (!plan) continue;
 
             // NT-LITE ideas: checklist + quality focus
-            if (f) {
-              const ntLiteScore = score.breakdown.quality + score.breakdown.governance;
-              if (ntLiteScore >= 50) {
-                const checklist = evaluateNtLiteChecklist(f, { sector: universe.find(u => u.ticker === ticker)?.sector ?? null, peerMedianPE: peer });
-                ntLiteIdeas.push({
-                  id: `mit-idea-${ticker}-${Date.now()}`,
-                  date: new Date().toISOString().slice(0, 10),
-                  ticker,
-                  feed: "nt-lite",
-                  thesis: generateNtLiteThesis(checklist, screenipyRow, t!),
-                  compositeScore: score,
-                  entryExitPlan: plan,
-                  technicals: t!,
-                  fundamentals: f,
-                  momentumLabel: generateMomentumLabel(screenipyRow, t!),
-                  risks: [],
-                  isAvoid: false,
-                  avoidReason: null,
-                });
-              }
+            const governance = evaluateHardGovernanceFilters(f);
+            const checklist = evaluateNtLiteChecklist(f, {
+              sector: universe.find((u) => u.ticker === ticker)?.sector ?? null,
+              peerMedianPE: peer,
+            });
+            const techForNt = t;
+            const rsiInBand = techForNt != null
+              && techForNt.rsi14 !== null
+              && techForNt.rsi14 >= marketMode.rsiMin
+              && techForNt.rsi14 <= marketMode.rsiMax;
+            const ntEntry = score.total >= 70
+              && techForNt != null
+              && techForNt.dma50 !== null && techForNt.latestClose > techForNt.dma50
+              && techForNt.dma200 !== null && techForNt.latestClose > techForNt.dma200
+              && rsiInBand
+              && governance.pass;
+            if (ntEntry && checklist.passCount >= 5) {
+              ntLiteIdeas.push({
+                id: `mit-idea-${ticker}-${Date.now()}`,
+                date: new Date().toISOString().slice(0, 10),
+                ticker,
+                feed: "nt-lite",
+                thesis: generateNtLiteThesis(checklist, screenipyRow, t!),
+                compositeScore: score,
+                entryExitPlan: plan,
+                technicals: t!,
+                fundamentals: f!,
+                momentumLabel: generateMomentumLabel(screenipyRow, t!),
+                risks: governance.reasons,
+                isAvoid: false,
+                avoidReason: null,
+              });
             }
 
             // QUANT ideas: momentum focus (return Z-score top decile)
@@ -406,9 +488,23 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
             const priceAboveDma100 = t!.dma100 ? t!.latestClose > t!.dma100 : false;
             const pullback = t!.pullback5d ?? 1;
             const isTopMomentum = zScore !== null && zScore >= 1.28; // Top decile
-            const isValidQuant = priceAboveDma100 && isTopMomentum && pullback < 0.05;
-            
-            if (isValidQuant && score.breakdown.momentum >= 50) {
+            const momentumPositive = zScore !== null && zScore > 0;
+            const governancePass = governance.pass;
+            const isValidQuant = priceAboveDma100 && isTopMomentum && momentumPositive && pullback < 0.05 && governancePass;
+
+            if (isValidQuant && score.breakdown.momentum >= 8) {
+              const quantPlan = computeEntryExitPlan({
+                ticker,
+                feed: "quant",
+                technicals: t!,
+                candles,
+                stopPct: draft.portfolio.settings.stopPct,
+                trailingActivationPct: draft.portfolio.settings.trailingActivationPct,
+                marketTone: currentTone,
+              });
+              if (!quantPlan) {
+                continue;
+              }
               quantIdeas.push({
                 id: `mit-quant-${ticker}-${Date.now()}`,
                 date: new Date().toISOString().slice(0, 10),
@@ -416,9 +512,9 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
                 feed: "quant",
                 thesis: generateQuantThesis(t!, zScore, pullback),
                 compositeScore: score,
-                entryExitPlan: plan,
+                entryExitPlan: quantPlan,
                 technicals: t!,
-                fundamentals: f ?? { ticker, fetchedAt: "", source: "manual" as const, revenueHistory: [], epsHistory: [], opmHistory: [], debtToEquity: null, interestCoverage: null, roce: null, roe: null, fcfHistory: [], pe: null, peg: null, marketCap: null, promoterHoldingPct: null, promoterPledgePct: null, auditorRemarks: "unknown" as const, revenueCAGR_3y: null, revenueCAGR_5y: null, epsCAGR_3y: null, epsCAGR_5y: null },
+                fundamentals: f,
                 momentumLabel: `Z:${(zScore ?? 0).toFixed(2)} DMA100:${priceAboveDma100 ? "↑" : "↓"}`,
                 risks: [],
                 isAvoid: false,
@@ -427,19 +523,75 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
             }
           }
 
-          // Merge ideas (prioritize NT-LITE, add Quant as secondary)
+          // Generate avoid names: governance flags or extreme overvaluation
+          const avoidIdeas: typeof ntLiteIdeas = [];
+          for (const ticker of tickers) {
+            const t = technicals[ticker];
+            const f = draft.fundamentals[ticker];
+            if (!t || !f) continue;
+            const flags = f ? governanceFlagsForTicker({
+              ticker,
+              signals: recentSignals,
+              promoterPledgePct: f.promoterPledgePct,
+            }) : [];
+            const overvalued = f?.peg !== null && f?.peg !== undefined && f.peg > 2;
+            const auditRisk = f?.auditorRemarks === "qualified" || f?.auditorRemarks === "adverse";
+            if (flags.length > 0 || overvalued || auditRisk) {
+              const reasons: string[] = [];
+              if (flags.length > 0) reasons.push(`Governance: ${flags.join(", ")}`);
+              if (overvalued) reasons.push(`Overvalued (PEG ${f!.peg!.toFixed(1)})`);
+              if (auditRisk) reasons.push(`Audit risk: ${f!.auditorRemarks}`);
+              avoidIdeas.push({
+                id: `mit-avoid-${ticker}-${Date.now()}`,
+                date: new Date().toISOString().slice(0, 10),
+                ticker,
+                feed: "nt-lite",
+                thesis: [],
+                compositeScore: scores[ticker] ?? { ticker, total: 0, breakdown: { quality: 0, growth: 0, valuation: 0, momentum: 0, governance: 0 }, percentileRank: 0, evaluatedAt: new Date().toISOString() },
+                entryExitPlan: { ticker, feed: "nt-lite", buyZoneLow: 0, buyZoneHigh: 0, stopLoss: 0, stopLossPct: 0, firstTarget: 0, firstTargetPct: 0, rMultiple: 0, trailingActivationPrice: 0, invalidation: reasons, computedAt: new Date().toISOString() },
+                technicals: t,
+                fundamentals: f,
+                momentumLabel: "",
+                risks: reasons,
+                isAvoid: true,
+                avoidReason: reasons.join("; "),
+              });
+            }
+          }
+
+          // Merge ideas (prioritize NT-LITE, add Quant as secondary, then avoids)
           const ideas = [...ntLiteIdeas];
           for (const q of quantIdeas) {
             if (!ideas.some(i => i.ticker === q.ticker)) {
               ideas.push(q);
             }
           }
+          // Add up to 2 avoid names
+          for (const a of avoidIdeas.slice(0, 2)) {
+            if (!ideas.some(i => i.ticker === a.ticker)) {
+              ideas.push(a);
+            }
+          }
 
           upsertDailyRun({ state: draft, technicals, fundamentals: draft.fundamentals, scores, ideas });
+          const anomalies = detectMitAnomalies(draft.candles);
+          runStatus.set(runId, {
+            status: "completed",
+            result: {
+              runId,
+              marketMode,
+              anomalies: anomalies.slice(0, 25),
+              ideas: ideas.length,
+              fundamentalsRefreshed: fundamentalsRefresh.updated.length,
+              fundamentalsRefreshFailed: fundamentalsRefresh.failed,
+            },
+          });
           draft.portfolio.lastPipelineRun = new Date().toISOString();
           return null;
         });
-        runStatus.set(runId, { status: "completed", result: { runId } });
+        if (!runStatus.get(runId) || runStatus.get(runId)?.status !== "completed") {
+          runStatus.set(runId, { status: "completed", result: { runId } });
+        }
       } catch (error) {
         runStatus.set(runId, { status: "failed", error: error instanceof Error ? error.message : String(error) });
       }
@@ -554,22 +706,7 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   });
 
   app.post("/api/mit/pnl/refresh", async () => {
-    return deps.mitStore.transaction(async (draft) => {
-      const latest: Record<string, number> = {};
-      for (const pos of draft.portfolio.positions) {
-        const candles = await marketData.fetchCandles(pos.ticker, 2).catch(() => []);
-        const close = candles[candles.length - 1]?.close;
-        if (close !== undefined) {
-          latest[pos.ticker] = close;
-        }
-      }
-      const refreshed = refreshPortfolioPnl(draft.portfolio, latest, {
-        technicalsByTicker: draft.technicals,
-        maxHorizonDays: draft.portfolio.settings.maxHorizonDays,
-      });
-      draft.portfolio = refreshed.portfolio;
-      return refreshed;
-    });
+    return deps.mitStore.transaction((draft) => refreshPortfolioFromMarket(draft, marketData));
   });
 
   app.get("/api/mit/pnl", async () => {
@@ -594,6 +731,11 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   app.get("/api/mit/guard", async () => {
     const state = await deps.mitStore.read();
     return checkGuard(state.portfolio);
+  });
+
+  app.get("/api/mit/anomalies", async () => {
+    const state = await deps.mitStore.read();
+    return detectMitAnomalies(state.candles);
   });
 
   app.get("/api/mit/trades", async () => {
@@ -638,6 +780,40 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
     reply.header("content-type", "text/csv");
     reply.header("content-disposition", `attachment; filename="mit-trades-${new Date().toISOString().slice(0, 10)}.csv"`);
     return closedTradesCsv(state);
+  });
+
+  app.post("/api/mit/stop/override", async (request, reply) => {
+    const body = request.body as { positionId?: string; newStop?: number };
+    if (!body.positionId || typeof body.newStop !== "number") {
+      return reply.code(400).send({ error: "positionId and newStop required" });
+    }
+    return deps.mitStore.transaction((draft) => {
+      return portfolioService.overrideStop(draft, body.positionId!, body.newStop!);
+    });
+  });
+
+  app.get("/api/mit/export/watchlist.csv", async (_request, reply) => {
+    const state = await deps.mitStore.read();
+    const latestRun = state.dailyRuns[state.dailyRuns.length - 1];
+    const ideas = latestRun?.ideas ?? [];
+    const rows = ["symbol,feed,buy_zone_low,buy_zone_high,stop,target,score,is_avoid,avoid_reason"];
+    for (const idea of ideas) {
+      const p = idea.entryExitPlan;
+      rows.push([
+        idea.ticker,
+        idea.feed,
+        p.buyZoneLow.toFixed(2),
+        p.buyZoneHigh.toFixed(2),
+        p.stopLoss.toFixed(2),
+        p.firstTarget.toFixed(2),
+        String(idea.compositeScore.total),
+        String(idea.isAvoid),
+        idea.avoidReason ?? "",
+      ].map(v => v.includes(",") || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v).join(","));
+    }
+    reply.header("content-type", "text/csv");
+    reply.header("content-disposition", `attachment; filename="mit-watchlist-${new Date().toISOString().slice(0, 10)}.csv"`);
+    return `${rows.join("\n")}\n`;
   });
 }
 
@@ -835,3 +1011,66 @@ function generateMomentumLabel(
   return parts.join(" | ");
 }
 
+async function refreshPortfolioFromMarket(draft: Awaited<ReturnType<MitStore["read"]>>, marketData: MarketDataService) {
+  const latest: Record<string, number> = {};
+  for (const pos of draft.portfolio.positions) {
+    const candles = await marketData.fetchCandles(pos.ticker, 2).catch(() => []);
+    const close = candles[candles.length - 1]?.close;
+    if (close !== undefined) {
+      latest[pos.ticker] = close;
+    }
+  }
+  const refreshed = refreshPortfolioPnl(draft.portfolio, latest, {
+    technicalsByTicker: draft.technicals,
+    maxHorizonDays: draft.portfolio.settings.maxHorizonDays,
+  });
+  draft.portfolio = refreshed.portfolio;
+  return refreshed;
+}
+
+function setupIntradayPriceScheduler(deps: { mitStore: MitStore }, marketData: MarketDataService) {
+  if (schedulerState.started || IST_REFRESH_SLOTS.length === 0) {
+    return;
+  }
+  schedulerState.started = true;
+
+  schedulerState.timer = setInterval(async () => {
+    const stamp = istSlotStamp();
+    if (!stamp || schedulerState.doneSlots.has(stamp)) {
+      return;
+    }
+    schedulerState.doneSlots.add(stamp);
+    try {
+      await deps.mitStore.transaction((draft) => refreshPortfolioFromMarket(draft, marketData));
+    } catch {
+      schedulerState.doneSlots.delete(stamp);
+    }
+  }, 60_000);
+}
+
+function istSlotStamp(now: Date = new Date()): string | null {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(now);
+
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  const weekday = get("weekday");
+  if (weekday === "Sat" || weekday === "Sun") {
+    return null;
+  }
+
+  const hhmm = `${get("hour")}:${get("minute")}`;
+  if (!IST_REFRESH_SLOTS.includes(hhmm)) {
+    return null;
+  }
+
+  const date = `${get("year")}-${get("month")}-${get("day")}`;
+  return `${date}:${hhmm}`;
+}

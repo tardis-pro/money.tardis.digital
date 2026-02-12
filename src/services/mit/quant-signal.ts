@@ -1,5 +1,7 @@
-import type { EntryExitPlan, MitWatchlistIdea, TechnicalSnapshot } from "../../mit-types.js";
+import type { EntryExitPlan, MitDailyRunResult, MitWatchlistIdea, TechnicalSnapshot } from "../../mit-types.js";
 import type { FundamentalSnapshot } from "../../mit-types.js";
+
+const COOLDOWN_DAYS = 5;
 
 export interface QuantSignalInput {
   ticker: string;
@@ -20,11 +22,27 @@ export function qualifiesQuantSignal(input: QuantSignalInput): boolean {
 export function selectTopQuantSignals(
   inputs: QuantSignalInput[],
   topDecileCount: number,
+  recentRuns?: MitDailyRunResult[],
 ): QuantSignalInput[] {
-  const filtered = inputs.filter((x) => qualifiesQuantSignal(x));
+  const coolingOff = buildCooldownSet(recentRuns ?? []);
+  const filtered = inputs.filter((x) => qualifiesQuantSignal(x) && !coolingOff.has(x.ticker));
   return filtered
     .sort((a, b) => (b.technicals.returnZScore20d ?? -Infinity) - (a.technicals.returnZScore20d ?? -Infinity))
     .slice(0, Math.max(1, topDecileCount));
+}
+
+function buildCooldownSet(runs: MitDailyRunResult[]): Set<string> {
+  const tickers = new Set<string>();
+  const cutoff = Date.now() - COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+  for (const run of runs) {
+    if (Date.parse(run.date) < cutoff) continue;
+    for (const idea of run.ideas) {
+      if (idea.feed === "quant" && !idea.isAvoid) {
+        tickers.add(idea.ticker);
+      }
+    }
+  }
+  return tickers;
 }
 
 export function toQuantIdea(input: QuantSignalInput): MitWatchlistIdea {

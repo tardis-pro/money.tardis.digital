@@ -71,7 +71,7 @@ export class MitPortfolioService {
       pnlLockedAt: null,
       activeSellIndicators: [],
       dismissedIndicators: [],
-      confirmedEntry: false,
+      confirmedEntry: true,
       notes: input.notes ?? "",
       createdAt: now,
       updatedAt: now,
@@ -136,6 +136,22 @@ export class MitPortfolioService {
       pos.status = "partial-exit";
       pos.updatedAt = now;
     }
+    return { ok: true };
+  }
+
+  overrideStop(state: MitState, positionId: string, newStop: number): { ok: boolean; reason?: string } {
+    const pos = state.portfolio.positions.find((p) => p.id === positionId);
+    if (!pos) {
+      return { ok: false, reason: "Position not found" };
+    }
+    if (newStop >= pos.currentPrice) {
+      return { ok: false, reason: "Stop must be below current price" };
+    }
+    pos.stopLoss = newStop;
+    if (pos.trailingStop !== null && newStop > pos.trailingStop) {
+      pos.trailingStop = newStop;
+    }
+    pos.updatedAt = new Date().toISOString();
     return { ok: true };
   }
 

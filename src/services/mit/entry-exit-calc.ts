@@ -1,4 +1,4 @@
-import type { DailyCandle, EntryExitPlan, MitFeed, TechnicalSnapshot } from "../../mit-types.js";
+import type { DailyCandle, EntryExitPlan, MitFeed, MitMarketTone, TechnicalSnapshot } from "../../mit-types.js";
 
 export interface EntryExitInput {
   ticker: string;
@@ -7,6 +7,7 @@ export interface EntryExitInput {
   candles: DailyCandle[];
   stopPct: number;
   trailingActivationPct: number;
+  marketTone?: MitMarketTone;
 }
 
 export function computeEntryExitPlan(input: EntryExitInput): EntryExitPlan | null {
@@ -21,16 +22,21 @@ export function computeEntryExitPlan(input: EntryExitInput): EntryExitPlan | nul
     return null;
   }
 
+  const tone = input.marketTone ?? "neutral";
   const nearDma = latest.close >= dma50 * 0.97 && latest.close <= dma50 * 1.03;
   const resistance = highestClose(input.candles, 60);
   const breakoutRetest = latest.close <= resistance * 1.02 && latest.close >= resistance * 0.98;
 
-  const buyZoneLow = nearDma ? dma50 * 0.99 : breakoutRetest ? resistance * 0.98 : latest.close * 0.99;
-  const buyZoneHigh = nearDma ? dma50 * 1.02 : breakoutRetest ? resistance * 1.01 : latest.close * 1.01;
+  // Blueprint Section 3: risk-off → narrow buy zones; risk-on → allow breakout entries
+  const zoneSpread = tone === "risk-off" ? { lo: 0.995, hi: 1.01 } : tone === "risk-on" ? { lo: 0.985, hi: 1.025 } : { lo: 0.99, hi: 1.02 };
+  const buyZoneLow = nearDma ? dma50 * zoneSpread.lo : breakoutRetest ? resistance * (zoneSpread.lo - 0.005) : latest.close * zoneSpread.lo;
+  const buyZoneHigh = nearDma ? dma50 * zoneSpread.hi : breakoutRetest ? resistance * (zoneSpread.hi - 0.01) : latest.close * zoneSpread.hi;
   const mid = (buyZoneLow + buyZoneHigh) / 2;
 
   const structuralSupport = lowestLow(input.candles, 20);
-  const stopFromPct = mid * (1 - input.stopPct);
+  // Blueprint Section 3: risk-on breakouts use tighter stops (5% instead of 6%)
+  const effectiveStopPct = tone === "risk-on" && breakoutRetest ? Math.min(input.stopPct, 0.05) : input.stopPct;
+  const stopFromPct = mid * (1 - effectiveStopPct);
   const stopLoss = Math.max(stopFromPct, structuralSupport);
   const risk = mid - stopLoss;
   if (risk <= 0) {

@@ -13,6 +13,7 @@ export interface MitStore {
   init(): Promise<void>;
   read(): Promise<MitState>;
   write(state: MitState): Promise<void>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   transaction<T>(fn: (state: MitState) => T): Promise<T>;
   getCandlesDir(): string;
 }
@@ -134,7 +135,7 @@ export class MitJsonStore implements MitStore {
 
   async transaction<T>(fn: (state: MitState) => T): Promise<T> {
     const state = await this.read();
-    const result = fn(state);
+    const result = await fn(state);
     await this.write(state);
     return result;
   }

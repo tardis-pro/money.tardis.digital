@@ -1,4 +1,5 @@
 import { Pool } from "pg";
+import path from "node:path";
 import type {
   AccessAuditRecord,
   AttributionOverride,
@@ -30,6 +31,7 @@ import type {
   Watchlist,
 } from "./types.js";
 import type { StateStore, Store } from "./store.js";
+import { nowIso, readJsonFile } from "./utils.js";
 
 const TABLES = [
   "sources",
@@ -65,6 +67,58 @@ const TABLES = [
 
 function rowPayload<T>(rows: Array<{ payload: T }>): T[] {
   return rows.map((row) => row.payload);
+}
+
+function defaultUserProfiles(at: string): UserProfile[] {
+  return [
+    {
+      id: "demo-viewer",
+      displayName: "Demo Viewer",
+      role: "viewer",
+      sourceEntitlements: ["businessline_rss"],
+      routeEntitlements: ["overview", "signals", "heatmap", "alerts", "supply-chain", "watchlists", "mit", "system"],
+      createdAt: at,
+      updatedAt: at,
+    },
+    {
+      id: "demo-analyst",
+      displayName: "Demo Analyst",
+      role: "analyst",
+      sourceEntitlements: ["pib_press", "rbi_circulars", "nse_announcements", "cppp_tenders", "businessline_rss"],
+      routeEntitlements: ["overview", "signals", "heatmap", "alerts", "supply-chain", "watchlists", "mit", "system"],
+      createdAt: at,
+      updatedAt: at,
+    },
+    {
+      id: "demo-admin",
+      displayName: "Demo Admin",
+      role: "admin",
+      sourceEntitlements: ["*"],
+      routeEntitlements: ["overview", "signals", "heatmap", "alerts", "supply-chain", "watchlists", "mit", "system"],
+      createdAt: at,
+      updatedAt: at,
+    },
+    {
+      id: "mit-trader",
+      displayName: "MIT Trader",
+      role: "operator",
+      sourceEntitlements: ["*"],
+      routeEntitlements: ["overview", "signals", "heatmap", "alerts", "supply-chain", "watchlists", "mit", "system"],
+      createdAt: at,
+      updatedAt: at,
+    },
+  ];
+}
+
+function defaultWatchlists(at: string): Watchlist[] {
+  return [
+    {
+      id: "core-policy",
+      name: "Core Policy Movers",
+      tickers: ["HAL", "BEL", "IRCTC", "NTPC", "SBIN", "LT"],
+      createdAt: at,
+    },
+  ];
 }
 
 export class PostgresStore implements Store {
@@ -189,22 +243,29 @@ export class PostgresStore implements Store {
 
     const state = await this.read();
     if (state.sources.length === 0) {
-      const { JsonStore } = await import("./store.js");
-      const bootstrap = new JsonStore();
-      await bootstrap.init();
-      const seed = await bootstrap.read();
-      await this.write(seed);
-    } else if (state.userProfiles.length === 0) {
-      const { JsonStore } = await import("./store.js");
-      const bootstrap = new JsonStore();
-      await bootstrap.init();
-      const seed = await bootstrap.read();
-      for (const user of seed.userProfiles) {
+      const seedSources = await readJsonFile<SourceRegistryItem[]>(
+        path.join(process.cwd(), "src/config/sources.json"),
+        [],
+      );
+      for (const source of seedSources) {
         await this.pool.query(
-          "INSERT INTO policy_signal.user_profiles (id, payload) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING",
-          [user.id, user],
+          "INSERT INTO policy_signal.sources (id, payload) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING",
+          [source.id, source],
         );
       }
+      for (const watchlist of defaultWatchlists(nowIso())) {
+        await this.pool.query(
+          "INSERT INTO policy_signal.watchlists (id, payload) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING",
+          [watchlist.id, watchlist],
+        );
+      }
+    }
+
+    for (const user of defaultUserProfiles(nowIso())) {
+      await this.pool.query(
+        "INSERT INTO policy_signal.user_profiles (id, payload) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING",
+        [user.id, user],
+      );
     }
   }
 

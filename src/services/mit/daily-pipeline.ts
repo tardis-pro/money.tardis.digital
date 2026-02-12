@@ -30,6 +30,7 @@ export function upsertDailyRun(input: PipelineBuildInput): MitDailyRunResult {
     universeSize: Object.keys(input.technicals).length,
     screenedCount: Object.keys(input.scores).length,
     marketTone: detectMarketTone([], input.technicals),
+    anomalies: [],
     errors: input.errors ?? [],
   };
 
@@ -59,5 +60,5 @@ function dedupeIdeas(ideas: MitWatchlistIdea[]): MitWatchlistIdea[] {
       map.set(idea.ticker, idea);
     }
   }
-  return [...map.values()].slice(0, 4);
+  return [...map.values()].slice(0, 8);
 }
