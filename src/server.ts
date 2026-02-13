@@ -48,6 +48,7 @@ import { MitPostgresStore } from "./mit-store-postgres.js";
 import { registerMitRoutes } from "./mit-routes.js";
 import { TelegramNotificationService, type HeroAlertPayload } from "./services/telegram-notifier.js";
 import { SurveillanceBot, getSurveillanceBot } from "./services/mit/surveillance-bot.js";
+import { TelegramFeatureService, getTelegramFeatureService } from "./services/telegram-feature-service.js";
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -1855,6 +1856,7 @@ async function buildServer() {
   // Telegram webhook for handling inline button callbacks and commands
   const telegramService = new TelegramNotificationService();
   const surveillanceBot = getSurveillanceBot();
+  const featureService = getTelegramFeatureService();
   
   app.post("/api/telegram/webhook", async (request, reply) => {
     const body = request.body as { 
@@ -2074,14 +2076,179 @@ Buy @ ${plan.buyZoneHigh.toFixed(0)} | Stop @ ${plan.stopLoss.toFixed(0)} | Targ
       }
       
       if (command === "/help") {
-        const helpText = `📖 *Available Commands*
-
-/hero - Get current hero pick
-/why - Why was this stock selected
-/status - Portfolio surveillance status
-/help - Show this message`;
-        
+        const helpText = featureService.generateHelpMessage();
         await telegramService.sendMessage(helpText);
+        return reply.code(200).send({ ok: true });
+      }
+      
+      if (command === "/extended") {
+        const args = message.text.split(" ").slice(1);
+        const requestedRank = parseInt(args[0] ?? "6", 10);
+        
+        const latest = [...(await mitStore.read()).dailyRuns].sort((a, b) => b.date.localeCompare(a.date))[0];
+        if (!latest) {
+          await telegramService.sendMessage("No analysis available. Run pipeline first.");
+          return reply.code(200).send({ ok: true });
+        }
+        
+        const validCandidates = latest.ideas.filter(idea => !idea.isAvoid && idea.entryExitPlan);
+        if (validCandidates.length === 0) {
+          await telegramService.sendMessage("No valid candidates available.");
+          return reply.code(200).send({ ok: true });
+        }
+        
+        const heroAnalysis = await mitStore.transaction(async (draft) => {
+          const { HeroAnalyst } = await import("./services/mit/hero-analyst.js");
+          const { MarketDataService } = await import("./services/mit/market-data.js");
+          
+          const analyst = new HeroAnalyst();
+          analyst.setMarketDataService(new MarketDataService());
+          return await analyst.analyzeCandidates(validCandidates);
+        });
+        
+        if (!heroAnalysis?.allCandidates?.length) {
+          await telegramService.sendMessage("Could not analyze candidates.");
+          return reply.code(200).send({ ok: true });
+        }
+        
+        const extended = featureService.getExtendedCandidates(heroAnalysis.allCandidates, heroAnalysis.allCandidates.length);
+        
+        if (requestedRank > extended.length) {
+          await telegramService.sendMessage(`Only ${extended.length} candidates available. Rank ${requestedRank} not found.`);
+          return reply.code(200).send({ ok: true });
+        }
+        
+        if (requestedRank === 10 || args[0] === "10") {
+          const table = featureService.formatTable(extended);
+          await telegramService.sendMessage(table);
+          return reply.code(200).send({ ok: true });
+        }
+        
+        const candidate = extended.find(c => c.rank === requestedRank) ?? extended[requestedRank - 1];
+        if (!candidate) {
+          await telegramService.sendMessage(`Rank ${requestedRank} not found.`);
+          return reply.code(200).send({ ok: true });
+        }
+        
+        const extendedMsg = featureService.formatExtendedMessage(candidate);
+        await telegramService.sendMessage(extendedMsg);
+        return reply.code(200).send({ ok: true });
+      }
+      
+      if (command === "/viz") {
+        const args = message.text.split(" ").slice(1);
+        const latest = [...(await mitStore.read()).dailyRuns].sort((a, b) => b.date.localeCompare(a.date))[0];
+        if (!latest) {
+          await telegramService.sendMessage("No analysis available. Run pipeline first.");
+          return reply.code(200).send({ ok: true });
+        }
+        
+        const state = await mitStore.read();
+        let ticker1 = args[0]?.toUpperCase();
+        let ticker2 = args[1]?.toUpperCase();
+        
+        if (!ticker1 || !ticker2) {
+          const top2 = latest.ideas.filter(i => !i.isAvoid).slice(0, 2);
+          ticker1 = top2[0]?.ticker ?? "RELIANCE";
+          ticker2 = top2[1]?.ticker ?? "TCS";
+        }
+        
+        const candles1 = state.candles[ticker1] ?? [];
+        const candles2 = state.candles[ticker2] ?? [];
+        
+        const chart1Url = featureService.generatePriceChartUrl(ticker1, candles1);
+        
+        const validCandidates = latest.ideas.filter(idea => !idea.isAvoid && idea.entryExitPlan);
+        const heroAnalysis = await mitStore.transaction(async (draft) => {
+          const { HeroAnalyst } = await import("./services/mit/hero-analyst.js");
+          const { MarketDataService } = await import("./services/mit/market-data.js");
+          const analyst = new HeroAnalyst();
+          analyst.setMarketDataService(new MarketDataService());
+          return await analyst.analyzeCandidates(validCandidates);
+        });
+        
+        const extended = heroAnalysis ? featureService.getExtendedCandidates(heroAnalysis.allCandidates, heroAnalysis.allCandidates.length) : [];
+        const chart2Url = featureService.generateScoreBreakdownChartUrl(extended);
+        
+        const vizMessage = `📈 *Price Visualization*
+
+Stocks: ${ticker1} vs ${ticker2}
+
+[📊 View Price Chart](${chart1Url})
+[📊 View Score Comparison](${chart2Url})
+
+💡 Click links to view charts`;
+        
+        await telegramService.sendMessage(vizMessage);
+        return reply.code(200).send({ ok: true });
+      }
+      
+      if (command === "/export") {
+        const latest = [...(await mitStore.read()).dailyRuns].sort((a, b) => b.date.localeCompare(a.date))[0];
+        if (!latest) {
+          await telegramService.sendMessage("No analysis available. Run pipeline first.");
+          return reply.code(200).send({ ok: true });
+        }
+        
+        const validCandidates = latest.ideas.filter(idea => !idea.isAvoid && idea.entryExitPlan);
+        const heroAnalysis = await mitStore.transaction(async (draft) => {
+          const { HeroAnalyst } = await import("./services/mit/hero-analyst.js");
+          const { MarketDataService } = await import("./services/mit/market-data.js");
+          const analyst = new HeroAnalyst();
+          analyst.setMarketDataService(new MarketDataService());
+          return await analyst.analyzeCandidates(validCandidates);
+        });
+        
+        if (!heroAnalysis?.allCandidates?.length) {
+          await telegramService.sendMessage("No candidates to export.");
+          return reply.code(200).send({ ok: true });
+        }
+        
+        const extended = featureService.getExtendedCandidates(heroAnalysis.allCandidates, heroAnalysis.allCandidates.length);
+        const table = featureService.formatTable(extended);
+        
+        await telegramService.sendMessage(`📊 *Candidate Rankings*\n\n${table}\n\n💡 Full CSV available at: ${process.env.PUBLIC_URL ?? "http://localhost:3000"}/api/mit/export/watchlist.csv`);
+        return reply.code(200).send({ ok: true });
+      }
+      
+      if (command === "/table") {
+        const latest = [...(await mitStore.read()).dailyRuns].sort((a, b) => b.date.localeCompare(a.date))[0];
+        if (!latest) {
+          await telegramService.sendMessage("No analysis available. Run pipeline first.");
+          return reply.code(200).send({ ok: true });
+        }
+        
+        const validCandidates = latest.ideas.filter(idea => !idea.isAvoid && idea.entryExitPlan);
+        const heroAnalysis = await mitStore.transaction(async (draft) => {
+          const { HeroAnalyst } = await import("./services/mit/hero-analyst.js");
+          const { MarketDataService } = await import("./services/mit/market-data.js");
+          const analyst = new HeroAnalyst();
+          analyst.setMarketDataService(new MarketDataService());
+          return await analyst.analyzeCandidates(validCandidates);
+        });
+        
+        if (!heroAnalysis?.allCandidates?.length) {
+          await telegramService.sendMessage("No candidates available.");
+          return reply.code(200).send({ ok: true });
+        }
+        
+        const extended = featureService.getExtendedCandidates(heroAnalysis.allCandidates, heroAnalysis.allCandidates.length);
+        const table = featureService.formatTable(extended);
+        await telegramService.sendMessage(table);
+        return reply.code(200).send({ ok: true });
+      }
+      
+      if (command === "/links") {
+        const args = message.text.split(" ").slice(1);
+        const ticker = args[0]?.toUpperCase();
+        
+        if (!ticker) {
+          await telegramService.sendMessage("Usage: /links SYMBOL\nExample: /links TCS");
+          return reply.code(200).send({ ok: true });
+        }
+        
+        const linksMessage = featureService.generateLinksMessage(ticker);
+        await telegramService.sendMessage(linksMessage);
         return reply.code(200).send({ ok: true });
       }
     }

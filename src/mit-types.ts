@@ -471,3 +471,193 @@ export type Nullable<T> = T | null;
 export type NumericDate = string; // YYYY-MM-DD format
 
 export type IsoTimestamp = string; // ISO 8601 format
+
+export type AgentIntent = "data_request" | "analysis" | "trade_action" | "feature_request" | "general_query"
+
+export type AgentName = "manager" | "librarian" | "analyst" | "trader" | "coder"
+
+export interface AgentIntentClassification {
+  intent: AgentIntent
+  confidence: number
+  agents: AgentName[]
+}
+
+export interface ManagerQueryRequest {
+  query: string
+  context?: {
+    recentStocks?: string[]
+    lastOutputFormat?: string
+  }
+  outputPreference?: "chart" | "table" | "text" | "links" | "auto"
+}
+
+export interface ManagerQueryResponse {
+  intent: string
+  interpretation: string
+  outputs: {
+    type: "chart" | "table" | "text" | "links"
+    content: string | Record<string, unknown>
+  }[]
+  actionTaken?: {
+    agent: string
+    details: string
+  }
+}
+
+export interface LibrarianQueryRequest {
+  action: "news" | "balance_sheet" | "articles" | "search"
+  ticker?: string
+  params?: {
+    dateRange?: { start: string; end: string }
+    limit?: number
+    sources?: string[]
+    query?: string
+  }
+}
+
+export interface LibrarianQueryResponse {
+  action: string
+  results: {
+    type: "news" | "balance_sheet" | "article"
+    items: {
+      title?: string
+      url?: string
+      date?: string
+      summary?: string
+      content?: Record<string, unknown>
+    }[]
+  }
+  metadata: {
+    fetchedAt: string
+    source: string
+  }
+}
+
+export interface AnalystQueryRequest {
+  ticker: string
+  analysisType: "fundamental" | "technical" | "historical" | "full" | "custom"
+  params?: {
+    period?: "1M" | "3M" | "6M" | "1Y" | "2Y" | "5Y" | "custom"
+    customMetrics?: string[]
+    peerGroup?: string[]
+  }
+}
+
+export type PeerComparison = Record<string, unknown>
+
+export interface AnalystQueryResponse {
+  ticker: string
+  analysisType: string
+  fundamentals?: {
+    score: CompositeScore
+    checklist?: NTLiteChecklistResult
+    peers?: PeerComparison[]
+  }
+  technicals?: TechnicalSnapshot
+  historical?: {
+    returns: { period: string; value: number }[]
+    volatility: number
+    cagr: number
+  }
+  customMetrics?: Record<string, number>
+}
+
+export interface FlexibleQueryRequest {
+  query: string
+  filters?: {
+    ticker?: string[]
+    metrics?: {
+      field: string
+      operator: "gt" | "lt" | "eq" | "between"
+      value: number | [number, number]
+    }[]
+    period?: string
+  }
+  outputFormat?: "table" | "chart" | "text"
+}
+
+export interface FlexibleQueryResponse {
+  query: string
+  interpretation: string
+  results: Record<string, unknown>[]
+  outputFormat: "table" | "chart" | "text"
+  summary?: string
+}
+
+export interface CoderFeatureRequest {
+  description: string
+  priority?: "low" | "medium" | "high"
+  context?: {
+    relatedFeatures?: string[]
+    userStory?: string
+  }
+}
+
+export interface CoderFeatureResponse {
+  issueCreated: boolean
+  issueNumber?: number
+  issueUrl?: string
+  title: string
+  body: string
+  suggestion: string
+}
+
+export interface NewsArticle {
+  title: string
+  url: string
+  date: string
+  source: string
+  summary?: string
+}
+
+export interface StockLinksResponse {
+  ticker: string
+  links: {
+    balanceSheet: string
+    fundamentals: string
+    news: string[]
+    technicals: string
+    promoterHoldings: string
+  }
+  recentNews: NewsArticle[]
+}
+
+export interface ExtendedHeroScore {
+  symbol: string
+  totalScore: number
+  narrative: string
+  metrics: {
+    atrPct: number
+    beta: number
+    r2: number
+    sectorTrend: "Up" | "Down"
+  }
+  candidate: MitWatchlistIdea
+}
+
+export interface ExtendedHeroResponse {
+  primaryHero: ExtendedHeroScore
+  secondaryHero: ExtendedHeroScore
+  extendedList: ExtendedHeroScore[]
+  rankingBasis: string
+  generatedAt: string
+}
+
+export interface HistoricalAnalysisResponse {
+  ticker: string
+  period: {
+    start: string
+    end: string
+    label: string
+  }
+  performance: {
+    absoluteReturnPct: number
+    cagrPct: number
+    volatility: number
+  }
+  returns: { period: string; value: number }[]
+  insights: string[]
+  recentNews?: NewsArticle[]
+  probableFuture?: string
+  generatedAt: string
+}

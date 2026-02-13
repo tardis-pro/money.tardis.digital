@@ -2,7 +2,15 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Store } from "./store.js";
 import type { MitStore } from "./mit-store.js";
-import type { MitUniverseEntry, MitWatchlistIdea, EntryExitPlan } from "./mit-types.js";
+import type {
+  MitUniverseEntry,
+  MitWatchlistIdea,
+  EntryExitPlan,
+  ManagerQueryRequest,
+  LibrarianQueryRequest,
+  AnalystQueryRequest,
+  CoderFeatureRequest,
+} from "./mit-types.js";
 import mitUniverse from "./config/mit-universe.json" with { type: "json" };
 import { evaluateNtLiteChecklist } from "./services/mit/nt-lite-checklist.js";
 import { computePeerMedianPEBySector, peerMedianForTicker } from "./services/mit/peer-comparison.js";
@@ -27,6 +35,14 @@ import { detectMitAnomalies } from "./services/mit/anomaly-detector.js";
 import { FundamentalsProviderService } from "./services/mit/fundamentals-provider.js";
 import { HeroAnalyst, type HeroAnalysisResult } from "./services/mit/hero-analyst.js";
 import { formatHeroBrief } from "./services/alert-orchestrator.js";
+import { ManagerAgent } from "./services/mit/manager-agent.js";
+import { LibrarianAgent } from "./services/mit/librarian-agent.js";
+import { AnalystAgent } from "./services/mit/analyst-agent.js";
+import { CoderAgent } from "./services/mit/coder-agent.js";
+import { QueryParser } from "./services/mit/query-parser.js";
+import { ChartGenerator } from "./services/mit/chart-generator.js";
+import { StockLinksService } from "./services/mit/stock-links.js";
+import { HistoricalAnalysisService } from "./services/mit/historical-analysis.js";
 
 const manualFundamentalSchema = z.object({
   ticker: z.string().min(1),
@@ -90,6 +106,81 @@ const settingsSchema = z.object({
   trailingActivationPct: z.number().positive().max(1).optional(),
 });
 
+const managerQuerySchema = z.object({
+  query: z.string().min(1),
+  context: z.object({
+    recentStocks: z.array(z.string()).optional(),
+    lastOutputFormat: z.string().optional(),
+  }).optional(),
+  outputPreference: z.enum(["chart", "table", "text", "links", "auto"]).optional(),
+});
+
+const librarianQuerySchema = z.object({
+  action: z.enum(["news", "balance_sheet", "articles", "search"]),
+  ticker: z.string().min(1).optional(),
+  params: z.object({
+    dateRange: z.object({
+      start: z.string(),
+      end: z.string(),
+    }).optional(),
+    limit: z.number().int().positive().max(20).optional(),
+    sources: z.array(z.string()).optional(),
+    query: z.string().optional(),
+  }).optional(),
+});
+
+const analystQuerySchema = z.object({
+  ticker: z.string().min(1),
+  analysisType: z.enum(["fundamental", "technical", "historical", "full", "custom"]),
+  params: z.object({
+    period: z.enum(["1M", "3M", "6M", "1Y", "2Y", "5Y", "custom"]).optional(),
+    customMetrics: z.array(z.string()).optional(),
+    peerGroup: z.array(z.string()).optional(),
+  }).optional(),
+});
+
+const coderRequestSchema = z.object({
+  description: z.string().min(1),
+  priority: z.enum(["low", "medium", "high"]).optional(),
+  context: z.object({
+    relatedFeatures: z.array(z.string()).optional(),
+    userStory: z.string().optional(),
+  }).optional(),
+});
+
+const flexibleQuerySchema = z.object({
+  query: z.string().min(1),
+  filters: z.object({
+    ticker: z.array(z.string().min(1)).optional(),
+    metrics: z.array(z.object({
+      field: z.string().min(1),
+      operator: z.enum(["gt", "lt", "eq", "between"]),
+      value: z.union([z.number(), z.tuple([z.number(), z.number()])]),
+    })).optional(),
+    period: z.string().optional(),
+  }).optional(),
+  outputFormat: z.enum(["table", "chart", "text"]).optional(),
+});
+
+const tickerParamSchema = z.object({
+  ticker: z.string().min(1),
+});
+
+const chartQuerySchema = z.object({
+  period: z.enum(["1M", "3M", "6M", "1Y", "2Y"]).optional(),
+  type: z.enum(["candle", "line", "area"]).optional(),
+});
+
+const historyQuerySchema = z.object({
+  period: z.string().optional(),
+});
+
+const newsQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(20).optional(),
+  start: z.string().optional(),
+  end: z.string().optional(),
+});
+
 const runStatus = new Map<string, { status: "started" | "completed" | "failed"; result?: unknown; error?: string }>();
 let screenipyCache: { rows: ReturnType<typeof enrichWithMITScores>; fetchedAt: string } | null = null;
 const SCREENIPY_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -128,6 +219,17 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   const fundamentalsProvider = new FundamentalsProviderService();
   const portfolioService = new MitPortfolioService();
   const tradeManager = new MitTradeManager();
+  const managerAgent = new ManagerAgent({ mitStore: deps.mitStore, store: deps.store });
+  const librarianAgent = new LibrarianAgent();
+  const analystAgent = new AnalystAgent({ mitStore: deps.mitStore, marketData });
+  const coderAgent = new CoderAgent({
+    ...(process.env.GITHUB_REPO_OWNER ? { owner: process.env.GITHUB_REPO_OWNER } : {}),
+    ...(process.env.GITHUB_REPO_NAME ? { repo: process.env.GITHUB_REPO_NAME } : {}),
+  });
+  const queryParser = new QueryParser();
+  const chartGenerator = new ChartGenerator({ marketData });
+  const stockLinksService = new StockLinksService();
+  const historicalAnalysisService = new HistoricalAnalysisService({ marketData });
   const universe = mitUniverse as MitUniverseEntry[];
 
   setupIntradayPriceScheduler(deps, marketData);
@@ -967,6 +1069,409 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
     reply.header("content-disposition", `attachment; filename="mit-watchlist-${new Date().toISOString().slice(0, 10)}.csv"`);
     return `${rows.join("\n")}\n`;
   });
+
+  app.post("/api/mit/manager/query", async (request, reply) => {
+    const parsed = managerQuerySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    try {
+      const result = await managerAgent.processQuery(toManagerQueryRequest(parsed.data));
+      return result;
+    } catch (error) {
+      return reply.code(500).send({ error: error instanceof Error ? error.message : "Manager query failed" });
+    }
+  });
+
+  app.post("/api/mit/agent/librarian", async (request, reply) => {
+    const parsed = librarianQuerySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    try {
+      const result = await librarianAgent.processRequest(toLibrarianQueryRequest(parsed.data));
+      return result;
+    } catch (error) {
+      return reply.code(500).send({ error: error instanceof Error ? error.message : "Librarian request failed" });
+    }
+  });
+
+  app.post("/api/mit/agent/analyst", async (request, reply) => {
+    const parsed = analystQuerySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    try {
+      const result = await analystAgent.processRequest(toAnalystQueryRequest(parsed.data));
+      return result;
+    } catch (error) {
+      return reply.code(500).send({ error: error instanceof Error ? error.message : "Analyst request failed" });
+    }
+  });
+
+  app.post("/api/mit/agent/coder/request", async (request, reply) => {
+    const parsed = coderRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    try {
+      const result = await coderAgent.createFeatureIssue(toCoderFeatureRequest(parsed.data));
+      return result;
+    } catch (error) {
+      return reply.code(500).send({ error: error instanceof Error ? error.message : "Coder request failed" });
+    }
+  });
+
+  app.post("/api/mit/query/flexible", async (request, reply) => {
+    const parsed = flexibleQuerySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+
+    try {
+      const parsedQuery = queryParser.parse(parsed.data.query);
+      const preferred = parsed.data.outputFormat ?? (parsedQuery.outputFormat === "csv" ? "table" : parsedQuery.outputFormat) ?? "text";
+      const managerResponse = await managerAgent.processQuery({
+        query: parsed.data.query,
+        outputPreference: preferred,
+      });
+
+      const resultRows = managerResponse.outputs.flatMap((output) => {
+        if (output.type === "table") {
+          const rows = (output.content as { rows?: Record<string, unknown>[] }).rows;
+          return Array.isArray(rows) ? rows : [];
+        }
+        if (output.type === "links") {
+          const links = (output.content as { links?: string[] }).links;
+          return Array.isArray(links) ? links.map((url) => ({ url })) : [];
+        }
+        if (output.type === "chart") {
+          return [{ chart: output.content }];
+        }
+        if (output.type === "text") {
+          return [{ text: output.content }];
+        }
+        return [];
+      });
+
+      return {
+        query: parsed.data.query,
+        interpretation: managerResponse.interpretation,
+        results: resultRows,
+        outputFormat: preferred,
+        summary: managerResponse.outputs.map((output) => output.type).join(", "),
+      };
+    } catch (error) {
+      return reply.code(500).send({ error: error instanceof Error ? error.message : "Flexible query failed" });
+    }
+  });
+
+  app.get("/api/mit/chart/:ticker", async (request, reply) => {
+    const paramsParsed = tickerParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: paramsParsed.error.issues });
+    }
+    const queryParsed = chartQuerySchema.safeParse(request.query ?? {});
+    if (!queryParsed.success) {
+      return reply.code(400).send({ error: queryParsed.error.issues });
+    }
+    try {
+      const result = await chartGenerator.generatePriceChart(paramsParsed.data.ticker, {
+        period: queryParsed.data.period ?? "6M",
+        type: queryParsed.data.type ?? "line",
+      });
+      return result;
+    } catch (error) {
+      return reply.code(500).send({ error: error instanceof Error ? error.message : "Chart generation failed" });
+    }
+  });
+
+  app.get("/api/mit/links/:ticker", async (request, reply) => {
+    const paramsParsed = tickerParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: paramsParsed.error.issues });
+    }
+    try {
+      const ticker = paramsParsed.data.ticker.toUpperCase();
+      return {
+        ticker,
+        links: stockLinksService.getLinks(ticker),
+        newsLinks: stockLinksService.getNewsLinks(ticker),
+      };
+    } catch (error) {
+      return reply.code(500).send({ error: error instanceof Error ? error.message : "Links fetch failed" });
+    }
+  });
+
+  app.get("/api/mit/history/:ticker", async (request, reply) => {
+    const paramsParsed = tickerParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: paramsParsed.error.issues });
+    }
+    const queryParsed = historyQuerySchema.safeParse(request.query ?? {});
+    if (!queryParsed.success) {
+      return reply.code(400).send({ error: queryParsed.error.issues });
+    }
+    try {
+      const result = await historicalAnalysisService.analyze(paramsParsed.data.ticker, queryParsed.data.period ?? "1Y");
+      return result;
+    } catch (error) {
+      return reply.code(500).send({ error: error instanceof Error ? error.message : "Historical analysis failed" });
+    }
+  });
+
+  app.get("/api/mit/news/:ticker", async (request, reply) => {
+    const paramsParsed = tickerParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: paramsParsed.error.issues });
+    }
+    const queryParsed = newsQuerySchema.safeParse(request.query ?? {});
+    if (!queryParsed.success) {
+      return reply.code(400).send({ error: queryParsed.error.issues });
+    }
+    try {
+      const dateRange = queryParsed.data.start && queryParsed.data.end
+        ? { start: queryParsed.data.start, end: queryParsed.data.end }
+        : undefined;
+      const result = await librarianAgent.fetchNews(paramsParsed.data.ticker, {
+        ...(queryParsed.data.limit !== undefined ? { limit: queryParsed.data.limit } : {}),
+        ...(dateRange ? { dateRange } : {}),
+      });
+      return result;
+    } catch (error) {
+      return reply.code(500).send({ error: error instanceof Error ? error.message : "News fetch failed" });
+    }
+  });
+
+  app.get("/api/mit/hero/extended", async (request, reply) => {
+    try {
+      const state = await deps.mitStore.read();
+      const latest = [...state.dailyRuns].sort((a, b) => b.date.localeCompare(a.date))[0];
+      if (!latest) {
+        return reply.code(404).send({ error: "No runs" });
+      }
+
+      const validCandidates = latest.ideas.filter((idea) => {
+        if (idea.isAvoid) return false;
+        if (!idea.entryExitPlan || !idea.technicals || !idea.fundamentals) return false;
+
+        const price = idea.technicals.latestClose;
+        const volume = idea.technicals.latestVolume;
+
+        if (checkPennyStock(price)) return false;
+
+        const liquidity = checkLiquidity(price, volume);
+        if (!liquidity.pass) return false;
+
+        return true;
+      });
+
+      if (validCandidates.length === 0) {
+        return {
+          scanned: latest.ideas.length,
+          validCandidates: 0,
+          primaryHero: null,
+          secondaryHero: null,
+          extendedList: [],
+          rankingBasis: "Hero score ranking from candidate analysis",
+          generatedAt: new Date().toISOString(),
+        };
+      }
+
+      const heroAnalyst = new HeroAnalyst();
+      heroAnalyst.setMarketDataService(marketData);
+      const result = await heroAnalyst.analyzeCandidates(validCandidates);
+
+      return {
+        scanned: result.scanned,
+        validCandidates: result.validCandidates,
+        primaryHero: result.heroPick,
+        secondaryHero: result.fallbackPick,
+        extendedList: result.allCandidates.slice(2, 10),
+        rankingBasis: "Hero score ranking from candidate analysis",
+        generatedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      return reply.code(500).send({ error: error instanceof Error ? error.message : "Extended hero analysis failed" });
+    }
+  });
+
+  app.get("/api/mit/export/extended-list.csv", async (request, reply) => {
+    try {
+      const state = await deps.mitStore.read();
+      const latest = [...state.dailyRuns].sort((a, b) => b.date.localeCompare(a.date))[0];
+      if (!latest) {
+        return reply.code(404).send({ error: "No runs" });
+      }
+
+      const validCandidates = latest.ideas.filter((idea) => {
+        if (idea.isAvoid) return false;
+        if (!idea.entryExitPlan || !idea.technicals || !idea.fundamentals) return false;
+        const price = idea.technicals.latestClose;
+        const volume = idea.technicals.latestVolume;
+        if (checkPennyStock(price)) return false;
+        return checkLiquidity(price, volume).pass;
+      });
+
+      const heroAnalyst = new HeroAnalyst();
+      heroAnalyst.setMarketDataService(marketData);
+      const ranked = validCandidates.length > 0
+        ? await heroAnalyst.analyzeCandidates(validCandidates)
+        : { allCandidates: [] as Array<{ symbol: string; totalScore: number; narrative: string; metrics: { atrPct: number; beta: number; r2: number; sectorTrend: "Up" | "Down" } }> };
+
+      const extended = ranked.allCandidates.slice(2, 10);
+      const rows = ["rank,ticker,total_score,narrative,atr_pct,beta,r2,sector_trend"];
+      for (let i = 0; i < extended.length; i += 1) {
+        const row = extended[i];
+        if (!row) continue;
+        rows.push([
+          String(i + 3),
+          row.symbol,
+          String(row.totalScore),
+          toCsvCell(row.narrative),
+          row.metrics.atrPct.toFixed(2),
+          row.metrics.beta.toFixed(4),
+          row.metrics.r2.toFixed(4),
+          row.metrics.sectorTrend,
+        ].join(","));
+      }
+
+      reply.header("content-type", "text/csv");
+      reply.header("content-disposition", `attachment; filename="mit-extended-heroes-${new Date().toISOString().slice(0, 10)}.csv"`);
+      return `${rows.join("\n")}\n`;
+    } catch (error) {
+      return reply.code(500).send({ error: error instanceof Error ? error.message : "Extended CSV export failed" });
+    }
+  });
+
+  app.get("/api/mit/export/analysis/:ticker", async (request, reply) => {
+    const paramsParsed = tickerParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: paramsParsed.error.issues });
+    }
+    const queryParsed = historyQuerySchema.safeParse(request.query ?? {});
+    if (!queryParsed.success) {
+      return reply.code(400).send({ error: queryParsed.error.issues });
+    }
+    try {
+      const ticker = paramsParsed.data.ticker.toUpperCase();
+      const period = queryParsed.data.period ?? "1Y";
+      const normalizedPeriod = (period === "1M" || period === "3M" || period === "6M" || period === "1Y" || period === "2Y" || period === "5Y")
+        ? period
+        : null;
+      const [historical, analysis] = await Promise.all([
+        historicalAnalysisService.analyze(ticker, period),
+        analystAgent.processRequest({
+          ticker,
+          analysisType: "full",
+          ...(normalizedPeriod ? { params: { period: normalizedPeriod } } : {}),
+        }),
+      ]);
+
+      const rows = ["ticker,period,metric,value"];
+      rows.push(`${ticker},${period},start_price,${historical.startPrice.toFixed(4)}`);
+      rows.push(`${ticker},${period},end_price,${historical.endPrice.toFixed(4)}`);
+      rows.push(`${ticker},${period},absolute_return,${historical.absoluteReturn.toFixed(4)}`);
+      rows.push(`${ticker},${period},percentage_return,${historical.percentageReturn.toFixed(4)}`);
+      rows.push(`${ticker},${period},cagr,${historical.cagr === null ? "" : historical.cagr.toFixed(6)}`);
+      rows.push(`${ticker},${period},volatility_daily,${historical.volatility.daily.toFixed(6)}`);
+      rows.push(`${ticker},${period},volatility_annualized,${historical.volatility.annualized.toFixed(6)}`);
+      rows.push(`${ticker},${period},sharpe_ratio,${historical.volatility.sharpeRatio === null ? "" : historical.volatility.sharpeRatio.toFixed(6)}`);
+      rows.push(`${ticker},${period},max_drawdown_pct,${historical.maxDrawdown.percentage.toFixed(6)}`);
+      rows.push(`${ticker},${period},trend_direction,${historical.trend.direction}`);
+      rows.push(`${ticker},${period},trend_strength,${historical.trend.strength}`);
+
+      if (analysis.fundamentals) {
+        rows.push(`${ticker},${period},composite_score,${analysis.fundamentals.score.total}`);
+        rows.push(`${ticker},${period},nt_lite_pass_count,${analysis.fundamentals.checklist?.passCount ?? ""}`);
+      }
+      if (analysis.technicals) {
+        rows.push(`${ticker},${period},latest_close,${analysis.technicals.latestClose}`);
+        rows.push(`${ticker},${period},rsi14,${analysis.technicals.rsi14 ?? ""}`);
+      }
+      if (analysis.customMetrics) {
+        for (const [metric, value] of Object.entries(analysis.customMetrics)) {
+          rows.push(`${ticker},${period},${metric},${value}`);
+        }
+      }
+
+      reply.header("content-type", "text/csv");
+      reply.header("content-disposition", `attachment; filename="mit-analysis-${ticker}-${new Date().toISOString().slice(0, 10)}.csv"`);
+      return `${rows.join("\n")}\n`;
+    } catch (error) {
+      return reply.code(500).send({ error: error instanceof Error ? error.message : "Analysis CSV export failed" });
+    }
+  });
+}
+
+function toCsvCell(value: string): string {
+  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+function toManagerQueryRequest(input: z.infer<typeof managerQuerySchema>): ManagerQueryRequest {
+  const context = input.context
+    ? {
+      ...(input.context.recentStocks !== undefined ? { recentStocks: input.context.recentStocks } : {}),
+      ...(input.context.lastOutputFormat !== undefined ? { lastOutputFormat: input.context.lastOutputFormat } : {}),
+    }
+    : undefined;
+
+  return {
+    query: input.query,
+    ...(context && Object.keys(context).length > 0 ? { context } : {}),
+    ...(input.outputPreference !== undefined ? { outputPreference: input.outputPreference } : {}),
+  };
+}
+
+function toLibrarianQueryRequest(input: z.infer<typeof librarianQuerySchema>): LibrarianQueryRequest {
+  const params = input.params
+    ? {
+      ...(input.params.dateRange !== undefined ? { dateRange: input.params.dateRange } : {}),
+      ...(input.params.limit !== undefined ? { limit: input.params.limit } : {}),
+      ...(input.params.sources !== undefined ? { sources: input.params.sources } : {}),
+      ...(input.params.query !== undefined ? { query: input.params.query } : {}),
+    }
+    : undefined;
+
+  return {
+    action: input.action,
+    ...(input.ticker !== undefined ? { ticker: input.ticker } : {}),
+    ...(params && Object.keys(params).length > 0 ? { params } : {}),
+  };
+}
+
+function toAnalystQueryRequest(input: z.infer<typeof analystQuerySchema>): AnalystQueryRequest {
+  const params = input.params
+    ? {
+      ...(input.params.period !== undefined ? { period: input.params.period } : {}),
+      ...(input.params.customMetrics !== undefined ? { customMetrics: input.params.customMetrics } : {}),
+      ...(input.params.peerGroup !== undefined ? { peerGroup: input.params.peerGroup } : {}),
+    }
+    : undefined;
+
+  return {
+    ticker: input.ticker,
+    analysisType: input.analysisType,
+    ...(params && Object.keys(params).length > 0 ? { params } : {}),
+  };
+}
+
+function toCoderFeatureRequest(input: z.infer<typeof coderRequestSchema>): CoderFeatureRequest {
+  const context = input.context
+    ? {
+      ...(input.context.relatedFeatures !== undefined ? { relatedFeatures: input.context.relatedFeatures } : {}),
+      ...(input.context.userStory !== undefined ? { userStory: input.context.userStory } : {}),
+    }
+    : undefined;
+
+  return {
+    description: input.description,
+    ...(input.priority !== undefined ? { priority: input.priority } : {}),
+    ...(context && Object.keys(context).length > 0 ? { context } : {}),
+  };
 }
 
 function compactSettings(input: {

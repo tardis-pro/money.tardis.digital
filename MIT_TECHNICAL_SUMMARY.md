@@ -15,9 +15,10 @@ The **QVM-Hybrid v3.2** update introduces the **"Manager-Supervised Swing Tradin
 | Metric | Value |
 |--------|-------|
 | API Endpoints | 42 |
-| Service Classes | 28 |
+| Service Classes | 30 |
 | Database Tables | 15 (PostgreSQL + TimescaleDB) |
 | Technical Indicators | 11+ |
+| Telegram Commands | 9 |
 | Compliance Score | 100% |
 | Data Provenance | Morningstar/Yahoo (no mocks) |
 
@@ -58,8 +59,13 @@ The **QVM-Hybrid v3.2** update introduces the **"Manager-Supervised Swing Tradin
 |---------|-------------|
 | `/hero` | Get current hero pick with Execute/Pass buttons |
 | `/why` | See why this stock was selected (brainstorming logic) |
+| `/extended [n]` | Show nth ranked stock (default: 6), `/extended 10` for top 10 |
+| `/viz [sym1] [sym2]` | Generate price charts (default: last 2 analyzed) |
+| `/export` | Export candidates as table with CSV link |
+| `/table` | View ranking table |
+| `/links SYMBOL` | Get balance sheet & news links (Screener, Yahoo, NSE, Moneycontrol) |
 | `/status` | Portfolio surveillance status (kill switch, blacklist, drift) |
-| `/help` | Show available commands |
+| `/help` | Show all available commands |
 
 **Environment Variables:**
 ```
@@ -298,7 +304,7 @@ if (process.env.NODE_ENV === "production" && payload.snapshot.source === "manual
 
 ---
 
-## Service Architecture (28 Services)
+## Service Architecture (30 Services)
 
 ### Core Data Services
 
@@ -338,6 +344,7 @@ if (process.env.NODE_ENV === "production" && payload.snapshot.source === "manual
 | Service | File | Purpose |
 |---------|------|---------|
 | **TelegramNotificationService** | `telegram-notifier.ts` | Telegram bot with inline buttons for Execute/Pass |
+| **TelegramFeatureService** | `telegram-feature-service.ts` | Charts, exports, links, extended rankings |
 | **SurveillanceBot** | `surveillance-bot.ts` | Post-trade monitoring, kill switch, blacklist, drift detection |
 
 ### Portfolio & Trading
@@ -648,6 +655,7 @@ UNION ALL SELECT 'daily_runs', COUNT(*) FROM mit.daily_runs;"
 | `src/services/telegram-notifier.ts` | **NEW** - Telegram integration |
 | `src/services/mit/governance-filter.ts` | **UPDATED** - Liquidity + penny stock |
 | `src/services/mit/technical-indicators.ts` | **UPDATED** - beta + rSquared |
+| `src/services/telegram-feature-service.ts` | **NEW** - Charts, exports, links, extended rankings |
 | `src/config/mit-strategy.json` | **NEW** - Strategy config |
 | `src/services/mit/` | All 28 service implementations |
 | `docker-compose.yml` | Infrastructure |
