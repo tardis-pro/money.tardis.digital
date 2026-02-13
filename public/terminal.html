@@ -1,658 +1,924 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>India Policy Signal Terminal</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            fontFamily: {
-              display: ["Space Grotesk", "sans-serif"],
-              body: ["Manrope", "sans-serif"],
-            },
-            colors: {
-              night: "#060b15",
-              steel: "#111a2d",
-              signal: "#3dd6b5",
-              ember: "#ff9666",
-              cloud: "#9fb4d5",
-            },
-            boxShadow: {
-              glow: "0 0 0 1px rgba(61,214,181,0.24), 0 12px 48px rgba(3,10,22,0.65)",
-            },
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IPST | Bloomberg-Style Terminal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            mono: ['"JetBrains Mono"', '"Fira Code"', 'monospace'],
+            display: ['"IBM Plex Sans"', 'system-ui', 'sans-serif'],
+            body: ['"IBM Plex Sans"', 'system-ui', 'sans-serif'],
           },
-        },
-      };
-    </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
-      rel="stylesheet"
-    />
-    <script type="module">
-      import React from "https://esm.sh/react@18.3.1?dev";
-      import { createRoot } from "https://esm.sh/react-dom@18.3.1/client?dev";
-      import { motion } from "https://esm.sh/framer-motion@11.11.10?dev&external=React";
-      import {
-        Area,
-        AreaChart,
-        Bar,
-        BarChart,
-        CartesianGrid,
-        Cell,
-        Legend,
-        Pie,
-        PieChart,
-        ResponsiveContainer,
-        Sankey,
-        Tooltip,
-        XAxis,
-        YAxis,
-      } from "https://esm.sh/recharts@2.12.7?dev&external=React";
-      import htm from "https://esm.sh/htm@3.1.1?dev";
-
-      const html = htm.bind(React.createElement);
-
-      async function fetchJSON(url, options) {
-        const response = await fetch(url, options);
-        if (!response.ok) {
-          throw new Error(`Request failed for ${url}: ${response.status}`);
+          colors: {
+            bb: {
+              black: '#000000',
+              panel: '#121212',
+              surface: '#1a1a1a',
+              border: '#2d2d2d',
+              'border-light': '#3d3d3d',
+              text: '#b0b0b0',
+              'text-dim': '#666666',
+              'text-bright': '#ffffff',
+              orange: '#ff6600',
+              blue: '#0099cc',
+              green: '#00cc66',
+              red: '#cc0000',
+              yellow: '#ffcc00',
+              purple: '#9933cc',
+            }
+          }
         }
-        return response.json();
       }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * { scrollbar-width: thin; scrollbar-color: #2d2d2d transparent; }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2d2d2d; border-radius: 2px; }
+    
+    .bb-panel { background: #121212; border: 1px solid #2d2d2d; }
+    .bb-input { background: #000; border: 1px solid #2d2d2d; color: #fff; font-family: 'JetBrains Mono', monospace; }
+    .bb-input:focus { outline: none; border-color: #ff6600; }
+    .bb-btn { background: #1a1a1a; border: 1px solid #2d2d2d; color: #b0b0b0; font-family: 'JetBrains Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; transition: all 0.1s; }
+    .bb-btn:hover { background: #2d2d2d; border-color: #3d3d3d; color: #fff; }
+    .bb-btn-active { background: #ff6600; color: #000; border-color: #ff6600; }
+    .bb-data-positive { color: #00cc66; }
+    .bb-data-negative { color: #cc0000; }
+    .bb-data-neutral { color: #b0b0b0; }
+    
+    .typing-indicator span { animation: typing 1.4s infinite; }
+    .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes typing { 0%, 60%, 100% { opacity: 0.3; } 30% { opacity: 1; } }
+    
+    .panel-collapse { max-height: 0; overflow: hidden; opacity: 0; transition: all 0.3s ease; }
+    .panel-expand { max-height: 400px; overflow-y: auto; opacity: 1; }
+    ::selection { background: #ff660030; }
+    #autocomplete-list { box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+  </style>
+</head>
+<body class="min-h-screen bg-bb-black font-body text-bb-text antialiased overflow-hidden">
+  <!-- Top Bar -->
+  <header class="fixed top-0 left-0 right-0 z-50 h-8 bg-bb-panel border-b border-bb-border flex items-center justify-between px-3">
+    <div class="flex items-center gap-3">
+      <span class="font-display font-bold text-bb-orange tracking-wider">IPST</span>
+      <span class="text-bb-text-dim text-xs">|</span>
+      <span class="font-mono text-xs text-bb-text-dim">INDIA POLICY SIGNAL TERMINAL</span>
+    </div>
+    <div class="flex items-center gap-4">
+      <div class="flex items-center gap-1">
+        <span class="w-2 h-2 rounded-full bg-bb-green animate-pulse"></span>
+        <span class="font-mono text-xs text-bb-green">LIVE</span>
+      </div>
+      <span class="font-mono text-xs text-bb-text-dim" id="clock">--:--:--</span>
+      <span class="font-mono text-xs text-bb-text-dim" id="date"></span>
+      <span class="text-bb-text-dim text-xs">|</span>
+      <span class="font-mono text-xs text-bb-text-dim" id="status-signals">Signals: -</span>
+      <span class="font-mono text-xs text-bb-text-dim" id="status-alerts">Alerts: -</span>
+    </div>
+  </header>
 
-      function pct(value) {
-        return `${(value * 100).toFixed(1)}%`;
+  <!-- Main Layout -->
+  <div class="pt-8 h-screen flex flex-col">
+    <!-- Toolbar -->
+    <div class="h-8 bg-bb-surface border-b border-bb-border flex items-center px-2 gap-1">
+      <button class="bb-btn px-2 py-1 rounded" onclick="togglePanel('signals')" id="btn-signals">
+        <span class="text-bb-orange">[1]</span> SIGNALS
+      </button>
+      <button class="bb-btn px-2 py-1 rounded" onclick="togglePanel('alerts')" id="btn-alerts">
+        <span class="text-bb-red">[2]</span> ALERTS
+      </button>
+      <button class="bb-btn px-2 py-1 rounded" onclick="togglePanel('portfolio')" id="btn-portfolio">
+        <span class="text-bb-green">[3]</span> PORTFOLIO
+      </button>
+      <button class="bb-btn px-2 py-1 rounded" onclick="togglePanel('heatmap')" id="btn-heatmap">
+        <span class="text-bb-blue">[4]</span> HEATMAP
+      </button>
+      <button class="bb-btn px-2 py-1 rounded" onclick="togglePanel('screen')" id="btn-screen">
+        <span class="text-bb-yellow">[5]</span> SCREENER
+      </button>
+      <button class="bb-btn px-2 py-1 rounded" onclick="togglePanel('agents')" id="btn-agents">
+        <span class="text-bb-purple">[6]</span> AGENTS
+      </button>
+      <button class="bb-btn px-2 py-1 rounded" onclick="togglePanel('ideas')" id="btn-ideas">
+        <span class="text-bb-green">[7]</span> IDEAS
+      </button>
+      <button class="bb-btn px-2 py-1 rounded" onclick="togglePanel('pipeline')" id="btn-pipeline">
+        <span class="text-bb-blue">[8]</span> PIPELINE
+      </button>
+      <button class="bb-btn px-2 py-1 rounded" onclick="togglePanel('hero')" id="btn-hero">
+        <span class="text-bb-yellow">[9]</span> HERO
+      </button>
+      <button class="bb-btn px-2 py-1 rounded" onclick="togglePanel('trades')" id="btn-trades">
+        <span class="text-bb-green">[0]</span> TRADES
+      </button>
+      <div class="flex-1"></div>
+      <span class="font-mono text-xs text-bb-text-dim">CTRL+K: CMD</span>
+    </div>
+
+    <!-- Content Area -->
+    <div class="flex-1 flex overflow-hidden">
+      <!-- Main Chat Area -->
+      <div class="flex-1 flex flex-col min-w-0">
+        <!-- Messages -->
+        <div id="chat-container" class="flex-1 overflow-y-auto p-3 space-y-2">
+          <!-- Welcome -->
+          <div class="bb-panel p-3">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-bb-green">■</span>
+              <span class="font-display font-medium text-bb-text-bright">IPST TERMINAL</span>
+              <span class="text-bb-text-dim text-xs ml-2">v2.0</span>
+            </div>
+            <p class="text-xs text-bb-text-dim mb-2">Bloomberg-style command center. Type natural language to interact.</p>
+            <div class="text-xs font-mono text-bb-text-dim space-y-1">
+              <p><span class="text-bb-orange">></span> "analyze TATASTEEL" - AI analysis</p>
+              <p><span class="text-bb-orange">></span> "show portfolio" - View positions</p>
+              <p><span class="text-bb-orange">></span> "run pipeline" - Execute daily pipeline</p>
+              <p><span class="text-bb-orange">></span> "show hero" - Top stock pick</p>
+              <p><span class="text-bb-orange">></span> Press <span class="text-bb-text-bright">1-9,0</span> toggle panels</p>
+            </div>
+          </div>
+          <div id="messages"></div>
+        </div>
+
+        <!-- Input -->
+        <div class="p-3 border-t border-bb-border bg-bb-panel">
+          <form id="chat-form" class="flex gap-2 items-center">
+            <span class="text-bb-orange font-mono">></span>
+            <input type="text" id="chat-input" class="bb-input flex-1 px-3 py-2 rounded text-sm"
+              placeholder="Ask: 'analyze RELIANCE', 'what are my top trades', 'run pipeline', 'show heatmap'..." autocomplete="off">
+            <button type="submit" class="bb-btn px-4 py-2 rounded bg-bb-orange text-black hover:bg-bb-orange/90">SEND</button>
+          </form>
+          <div class="mt-1 flex gap-4 text-xs font-mono text-bb-text-dim">
+            <span><span class="text-bb-orange">TAB</span> autocomplete</span>
+            <span><span class="text-bb-orange">UP/DOWN</span> history</span>
+            <span><span class="text-bb-orange">ESC</span> clear</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Side Panels -->
+      <div class="w-72 border-l border-bb-border flex flex-col overflow-hidden">
+        <!-- Signals Panel -->
+        <div id="panel-signals" class="panel-collapse flex-1 flex flex-col border-b border-bb-border">
+          <div class="p-2 bg-bb-surface border-b border-bb-border flex items-center justify-between">
+            <span class="font-mono text-xs text-bb-orange uppercase">Top Signals</span>
+            <span class="text-xs font-mono text-bb-text-dim" id="signal-count">0</span>
+          </div>
+          <div class="flex-1 overflow-y-auto p-2 space-y-1" id="signals-list"></div>
+        </div>
+
+        <!-- Alerts Panel -->
+        <div id="panel-alerts" class="panel-collapse flex-1 flex flex-col border-b border-bb-border">
+          <div class="p-2 bg-bb-surface border-b border-bb-border flex items-center justify-between">
+            <span class="font-mono text-xs text-bb-red uppercase">Active Alerts</span>
+            <span class="text-xs font-mono text-bb-text-dim" id="alert-count">0</span>
+          </div>
+          <div class="flex-1 overflow-y-auto p-2 space-y-1" id="alerts-list"></div>
+        </div>
+
+        <!-- Portfolio Panel -->
+        <div id="panel-portfolio" class="panel-collapse flex-1 flex flex-col border-b border-bb-border">
+          <div class="p-2 bg-bb-surface border-b border-bb-border flex items-center justify-between">
+            <span class="font-mono text-xs text-bb-green uppercase">Positions</span>
+            <span class="text-xs font-mono text-bb-text-dim" id="position-count">0</span>
+          </div>
+          <div class="flex-1 overflow-y-auto p-2 space-y-1" id="portfolio-list"></div>
+        </div>
+
+        <!-- Heatmap Panel -->
+        <div id="panel-heatmap" class="panel-collapse flex-1 flex flex-col border-b border-bb-border">
+          <div class="p-2 bg-bb-surface border-b border-bb-border flex items-center justify-between">
+            <span class="font-mono text-xs text-bb-blue uppercase">Sector Heatmap</span>
+          </div>
+          <div class="flex-1 overflow-y-auto p-2" id="heatmap-list"></div>
+        </div>
+
+        <!-- Screener Panel -->
+        <div id="panel-screen" class="panel-collapse flex-1 flex flex-col border-b border-bb-border">
+          <div class="p-2 bg-bb-surface border-b border-bb-border flex items-center justify-between">
+            <span class="font-mono text-xs text-bb-yellow uppercase">Screener</span>
+            <button class="bb-btn px-2 py-0.5 rounded text-xs" onclick="runScreener()">RUN</button>
+          </div>
+          <div class="flex-1 overflow-y-auto p-2 space-y-1" id="screener-list"></div>
+        </div>
+
+        <!-- Agents Panel -->
+        <div id="panel-agents" class="panel-collapse flex-1 flex flex-col">
+          <div class="p-2 bg-bb-surface border-b border-bb-border">
+            <span class="font-mono text-xs text-bb-purple uppercase">Agent Status</span>
+          </div>
+          <div class="flex-1 overflow-y-auto p-2 space-y-1" id="agents-list">
+            <div class="p-2 border border-bb-border rounded">
+              <div class="flex justify-between items-center">
+                <span class="font-mono text-xs">Manager</span>
+                <span class="w-2 h-2 rounded-full bg-bb-green"></span>
+              </div>
+              <p class="text-xs text-bb-text-dim mt-1">Ready for queries</p>
+            </div>
+            <div class="p-2 border border-bb-border rounded">
+              <div class="flex justify-between items-center">
+                <span class="font-mono text-xs">Analyst</span>
+                <span class="w-2 h-2 rounded-full bg-bb-green"></span>
+              </div>
+              <p class="text-xs text-bb-text-dim mt-1">Analysis ready</p>
+            </div>
+            <div class="p-2 border border-bb-border rounded">
+              <div class="flex justify-between items-center">
+                <span class="font-mono text-xs">Librarian</span>
+                <span class="w-2 h-2 rounded-full bg-bb-green"></span>
+              </div>
+              <p class="text-xs text-bb-text-dim mt-1">News & data</p>
+            </div>
+            <div class="p-2 border border-bb-border rounded">
+              <div class="flex justify-between items-center">
+                <span class="font-mono text-xs">Coder</span>
+                <span class="w-2 h-2 rounded-full bg-bb-yellow"></span>
+              </div>
+              <p class="text-xs text-bb-text-dim mt-1">Feature requests</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Ideas Panel -->
+        <div id="panel-ideas" class="panel-collapse flex-1 flex flex-col border-b border-bb-border">
+          <div class="p-2 bg-bb-surface border-b border-bb-border flex items-center justify-between">
+            <span class="font-mono text-xs text-bb-green uppercase">Daily Ideas</span>
+            <button class="bb-btn px-2 py-0.5 rounded text-xs" onclick="loadIdeas()">REFRESH</button>
+          </div>
+          <div class="flex-1 overflow-y-auto p-2 space-y-1" id="ideas-list"></div>
+        </div>
+
+        <!-- Pipeline Panel -->
+        <div id="panel-pipeline" class="panel-collapse flex-1 flex flex-col border-b border-bb-border">
+          <div class="p-2 bg-bb-surface border-b border-bb-border flex items-center justify-between">
+            <span class="font-mono text-xs text-bb-blue uppercase">Pipeline</span>
+            <button class="bb-btn px-2 py-0.5 rounded text-xs" onclick="runPipeline()">RUN NOW</button>
+          </div>
+          <div class="flex-1 overflow-y-auto p-2" id="pipeline-status">
+            <div class="p-2 border border-bb-border rounded">
+              <div class="flex justify-between items-center">
+                <span class="font-mono text-xs">Status</span>
+                <span class="font-mono text-xs text-bb-text-dim" id="pipeline-status-text">Idle</span>
+              </div>
+              <div class="text-xs text-bb-text-dim mt-1" id="pipeline-last-run">No runs yet</div>
+            </div>
+            <div class="p-2 border border-bb-border rounded mt-2">
+              <div class="text-xs text-bb-text-dim">Latest Results</div>
+              <div class="text-xs mt-1" id="pipeline-results">-</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hero Analysis Panel -->
+        <div id="panel-hero" class="panel-collapse flex-1 flex flex-col border-b border-bb-border">
+          <div class="p-2 bg-bb-surface border-b border-bb-border flex items-center justify-between">
+            <span class="font-mono text-xs text-bb-yellow uppercase">Hero Analysis</span>
+            <button class="bb-btn px-2 py-0.5 rounded text-xs" onclick="loadHero()">ANALYZE</button>
+          </div>
+          <div class="flex-1 overflow-y-auto p-2 space-y-1" id="hero-list">
+            <div class="p-2 border border-bb-border rounded">
+              <div class="text-xs text-bb-text-dim">Click ANALYZE to find top stock picks</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Trades Panel -->
+        <div id="panel-trades" class="panel-collapse flex-1 flex flex-col">
+          <div class="p-2 bg-bb-surface border-b border-bb-border flex items-center justify-between">
+            <span class="font-mono text-xs text-bb-green uppercase">Closed Trades</span>
+            <button class="bb-btn px-2 py-0.5 rounded text-xs" onclick="loadTrades()">REFRESH</button>
+          </div>
+          <div class="flex-1 overflow-y-auto p-2 space-y-1" id="trades-list">
+            <div class="p-2 border border-bb-border rounded">
+              <div class="text-xs text-bb-text-dim">Loading trades...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Command Palette -->
+  <div id="command-palette" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/80" onclick="closeCommandPalette()"></div>
+    <div class="absolute top-20 left-1/2 -translate-x-1/2 w-full max-w-lg">
+      <div class="bb-panel p-4">
+        <input type="text" id="command-input" class="bb-input w-full px-4 py-3 rounded mb-3 text-sm"
+          placeholder="Type command or query..." autofocus>
+        <div class="text-xs font-mono text-bb-text-dim grid grid-cols-2 gap-1">
+          <p><span class="text-bb-orange">analyze [TICKER]</span> - AI analysis</p>
+          <p><span class="text-bb-orange">portfolio</span> - View positions</p>
+          <p><span class="text-bb-orange">signals</span> - Top signals</p>
+          <p><span class="text-bb-orange">alerts</span> - Active alerts</p>
+          <p><span class="text-bb-orange">screener</span> - Run scan</p>
+          <p><span class="text-bb-orange">heatmap</span> - Sector view</p>
+          <p><span class="text-bb-orange">pipeline</span> - Run pipeline</p>
+          <p><span class="text-bb-orange">hero</span> - Top pick</p>
+          <p><span class="text-bb-orange">trades</span> - Closed trades</p>
+          <p><span class="text-bb-orange">help</span> - Show commands</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    // State
+    let messages = [];
+    let chatHistory = [];
+    let historyIndex = -1;
+    let activePanels = new Set();
+
+    // Utils
+    const POPULAR_TICKERS = ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'TATASTEEL', 'TATAMOTORS', 'SBIN', 'LT', 'ITC', 'HINDUNILVR', 'KOTAKBANK', 'AXISBANK', 'MARUTI', 'SUNPHARMA', 'TITAN'];
+    function fmt(num, decimals = 2) {
+      if (num === null || num === undefined) return '-';
+      return typeof num === 'number' ? num.toFixed(decimals) : num;
+    }
+    function pct(num) {
+      if (num === null || num === undefined) return '-';
+      return typeof num === 'number' ? (num * 100).toFixed(1) + '%' : num;
+    }
+    function time(date) { return new Date(date).toLocaleTimeString('en-US', { hour12: false }); }
+    function date(date) { return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+
+    async function fetchJSON(url, options = {}) {
+      const response = await fetch(url, options);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    }
+
+    // Clock
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('clock').textContent = now.toLocaleTimeString('en-US', { hour12: false });
+      document.getElementById('date').textContent = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // Panel toggle
+    window.togglePanel = function(panelId) {
+      const panel = document.getElementById('panel-' + panelId);
+      const btn = document.getElementById('btn-' + panelId);
+      if (activePanels.has(panelId)) {
+        activePanels.delete(panelId);
+        panel.classList.remove('panel-expand');
+        panel.classList.add('panel-collapse');
+        btn.classList.remove('bb-btn-active');
+      } else {
+        activePanels.add(panelId);
+        panel.classList.remove('panel-collapse');
+        panel.classList.add('panel-expand');
+        btn.classList.add('bb-btn-active');
       }
+    };
 
-      function severityColor(severity) {
-        if (severity === "high") return "#ff9666";
-        if (severity === "medium") return "#ffd369";
-        return "#7ab8ff";
+    window.closeCommandPalette = function() {
+      document.getElementById('command-palette').classList.add('hidden');
+      document.getElementById('command-input').value = '';
+    };
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        document.getElementById('command-palette').classList.remove('hidden');
+        document.getElementById('command-input').focus();
       }
-
-      function signalColor(direction) {
-        if (direction === "positive") return "text-emerald-300";
-        if (direction === "negative") return "text-orange-300";
-        return "text-slate-300";
+        if (!e.ctrlKey && !e.metaKey) {
+        if (e.key === '1') window.togglePanel('signals');
+        if (e.key === '2') window.togglePanel('alerts');
+        if (e.key === '3') window.togglePanel('portfolio');
+        if (e.key === '4') window.togglePanel('heatmap');
+        if (e.key === '5') window.togglePanel('screen');
+        if (e.key === '6') window.togglePanel('agents');
+        if (e.key === '7') window.togglePanel('ideas');
+        if (e.key === '8') window.togglePanel('pipeline');
+        if (e.key === '9') window.togglePanel('hero');
+        if (e.key === '0') window.togglePanel('trades');
       }
+      if (e.key === 'Escape') window.closeCommandPalette();
+    });
 
-      function relationColor(relation) {
-        return relation === "direct" ? "#3dd6b5" : "#7ab8ff";
+    // Chat form
+    document.getElementById('chat-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const input = document.getElementById('chat-input');
+      const query = input.value.trim().toLowerCase();
+      if (!query) return;
+      
+      addMessage({ role: 'user', content: input.value.trim() });
+      input.value = '';
+      chatHistory.push(input.value.trim());
+      historyIndex = chatHistory.length;
+      
+      // Handle quick commands directly
+      if (query === 'run pipeline' || query === 'pipeline') {
+        showTypingIndicator();
+        try {
+          const result = await fetchJSON('/api/mit/pipeline/run', { method: 'POST' });
+          hideTypingIndicator();
+          addMessage({ role: 'assistant', content: `Pipeline started: ${result.runId}\nStatus: ${result.status}` });
+        } catch (err) {
+          hideTypingIndicator();
+          addMessage({ role: 'system', content: `Error: ${err.message}` });
+        }
+        return;
       }
-
-      const COMMAND_HINTS = ["signals", "heatmap", "alerts", "supply", "watchlists", "system", "overview"];
-
-      function panelClass(route, activeRoute, baseClass) {
-        const isActive = route === activeRoute;
-        return `${baseClass} ${isActive ? "ring-1 ring-teal-300/50" : ""}`.trim();
-      }
-
-      function App() {
-        const [loading, setLoading] = useState(true);
-        const [running, setRunning] = useState(false);
-        const [error, setError] = useState("");
-        const [commandInput, setCommandInput] = useState("");
-        const [commandStatus, setCommandStatus] = useState("");
-        const [activeRoute, setActiveRoute] = useState("overview");
-        const [signals, setSignals] = useState([]);
-        const [heatmap, setHeatmap] = useState([]);
-        const [alerts, setAlerts] = useState([]);
-        const [outcomes, setOutcomes] = useState({ total: 0, hitRate: 0, averageReturn: 0 });
-        const [supplyGraph, setSupplyGraph] = useState({ nodes: [], edges: [] });
-        const [commandLogs, setCommandLogs] = useState([]);
-        const [watchlists, setWatchlists] = useState([]);
-
-        const refresh = async () => {
-          try {
-            setError("");
-            const [signalsData, heatmapData, alertsData, outcomeData, supplyData, commandData, watchlistData] = await Promise.all([
-              fetchJSON("/api/signals?limit=40"),
-              fetchJSON("/api/heatmap"),
-              fetchJSON("/api/alerts"),
-              fetchJSON("/api/outcomes/summary"),
-              fetchJSON("/api/supply-chain-graph"),
-              fetchJSON("/api/terminal/commands?limit=12"),
-              fetchJSON("/api/watchlists"),
-            ]);
-            setSignals(signalsData);
-            setHeatmap(heatmapData);
-            setAlerts(alertsData);
-            setOutcomes(outcomeData);
-            setSupplyGraph(supplyData);
-            setCommandLogs(commandData);
-            setWatchlists(watchlistData);
-          } catch (err) {
-            setError(err instanceof Error ? err.message : String(err));
-          } finally {
-            setLoading(false);
+      
+      if (query === 'show portfolio' || query === 'portfolio') {
+        showTypingIndicator();
+        try {
+          const portfolio = await fetchJSON('/api/mit/portfolio');
+          hideTypingIndicator();
+          const positions = portfolio.positions || [];
+          if (positions.length === 0) {
+            addMessage({ role: 'assistant', content: 'No open positions.' });
+          } else {
+            const summary = positions.map(p => `${p.ticker}: ${p.qty} @ ₹${fmt(p.avgPrice)} (P&L: ${fmt(p.pnl)})`).join('\n');
+            addMessage({ role: 'assistant', content: `Portfolio Summary:\n${summary}` });
           }
-        };
-
-        const runPipeline = async () => {
-          try {
-            setRunning(true);
-            await fetchJSON("/api/ingest/run", { method: "POST" });
-            await refresh();
-          } catch (err) {
-            setError(err instanceof Error ? err.message : String(err));
-          } finally {
-            setRunning(false);
+        } catch (err) {
+          hideTypingIndicator();
+          addMessage({ role: 'system', content: `Error: ${err.message}` });
+        }
+        return;
+      }
+      
+      if (query === 'show signals' || query === 'signals') {
+        togglePanel('signals');
+        addMessage({ role: 'assistant', content: 'Signals panel opened.' });
+        return;
+      }
+      
+      if (query === 'show alerts' || query === 'alerts') {
+        togglePanel('alerts');
+        addMessage({ role: 'assistant', content: 'Alerts panel opened.' });
+        return;
+      }
+      
+      if (query === 'show heatmap' || query === 'heatmap') {
+        togglePanel('heatmap');
+        addMessage({ role: 'assistant', content: 'Heatmap panel opened.' });
+        return;
+      }
+      
+      if (query === 'run screener' || query === 'screener') {
+        togglePanel('screen');
+        runScreener();
+        addMessage({ role: 'assistant', content: 'Screener panel opened and running...' });
+        return;
+      }
+      
+      if (query === 'show ideas' || query === 'ideas') {
+        togglePanel('ideas');
+        loadIdeas();
+        addMessage({ role: 'assistant', content: 'Ideas panel opened and loading...' });
+        return;
+      }
+      
+      if (query === 'help' || query === '?') {
+        addMessage({ role: 'assistant', content: `Available Commands:
+• "analyze [TICKER]" - AI stock analysis
+• "show portfolio" - View positions
+• "run pipeline" - Execute daily pipeline
+• "run screener" - Scan candidates
+• "show hero" - Top stock pick
+• "show trades" - Closed trades
+• "show signals/alerts/heatmap/ideas" - Toggle panels
+• Any question - AI agent will answer` });
+        return;
+      }
+      
+      if (query === 'show hero' || query === 'hero') {
+        togglePanel('hero');
+        loadHero();
+        addMessage({ role: 'assistant', content: 'Hero analysis panel opened.' });
+        return;
+      }
+      
+      if (query === 'show trades' || query === 'trades') {
+        togglePanel('trades');
+        loadTrades();
+        addMessage({ role: 'assistant', content: 'Trades panel opened.' });
+        return;
+      }
+      
+      // Default: use manager agent
+      showTypingIndicator();
+      
+      try {
+        const response = await fetchJSON('/api/mit/manager/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: input.value.trim() })
+        });
+        hideTypingIndicator();
+        
+        if (response.outputs && response.outputs.length > 0) {
+          addMessage({ 
+            role: 'assistant', 
+            content: response.outputs[0].content,
+            type: response.outputs[0].type,
+            intent: response.intent,
+            interpretation: response.interpretation,
+            actionTaken: response.actionTaken
+          });
+        } else {
+          addMessage({ role: 'assistant', content: 'No response from agent.' });
+        }
+      } catch (err) {
+        hideTypingIndicator();
+        try {
+          const fallback = await fetchJSON('/api/terminal/command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ input: input.value.trim() })
+          });
+          if (fallback.status === 'success') {
+            addMessage({ role: 'assistant', content: `Executed: ${fallback.route || 'command'} (${fallback.latencyMs}ms)` });
+          } else {
+            addMessage({ role: 'system', content: `Error: ${err.message}` });
           }
+        } catch (err2) {
+          addMessage({ role: 'system', content: `Error: ${err.message}` });
+        }
+      }
+    });
+
+    // Command palette
+    document.getElementById('command-input').addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter') {
+        const cmd = e.target.value.trim();
+        window.closeCommandPalette();
+        
+        // Send to chat
+        document.getElementById('chat-input').value = cmd;
+        document.getElementById('chat-form').dispatchEvent(new Event('submit'));
+      }
+    });
+
+    // History navigation
+    document.getElementById('chat-input').addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowUp' && chatHistory.length > 0) {
+        e.preventDefault();
+        historyIndex = Math.max(0, historyIndex - 1);
+        e.target.value = chatHistory[historyIndex];
+      }
+      if (e.key === 'ArrowDown' && chatHistory.length > 0) {
+        e.preventDefault();
+        historyIndex = Math.min(chatHistory.length, historyIndex + 1);
+        e.target.value = historyIndex < chatHistory.length ? chatHistory[historyIndex] : '';
+      }
+    });
+    
+    // Autocomplete
+    const autocompleteList = document.createElement('div');
+    autocompleteList.id = 'autocomplete-list';
+    autocompleteList.className = 'absolute bottom-full left-0 right-0 bg-bb-panel border border-bb-border rounded mt-1 max-h-40 overflow-y-auto hidden';
+    autocompleteList.style.zIndex = '100';
+    document.getElementById('chat-form').style.position = 'relative';
+    document.getElementById('chat-form').appendChild(autocompleteList);
+    
+    document.getElementById('chat-input').addEventListener('input', function(e) {
+      const val = this.value.toUpperCase();
+      autocompleteList.innerHTML = '';
+      if (val.length < 1) {
+        autocompleteList.classList.add('hidden');
+        return;
+      }
+      const matches = POPULAR_TICKERS.filter(t => t.startsWith(val)).slice(0, 6);
+      if (matches.length === 0) {
+        autocompleteList.classList.add('hidden');
+        return;
+      }
+      matches.forEach(ticker => {
+        const item = document.createElement('div');
+        item.className = 'px-3 py-2 cursor-pointer hover:bg-bb-surface text-xs font-mono text-bb-text-bright';
+        item.textContent = ticker;
+        item.onclick = () => {
+          document.getElementById('chat-input').value = 'analyze ' + ticker;
+          autocompleteList.classList.add('hidden');
+          document.getElementById('chat-input').focus();
         };
+        autocompleteList.appendChild(item);
+      });
+      autocompleteList.classList.remove('hidden');
+    });
+    
+    document.getElementById('chat-input').addEventListener('blur', () => {
+      setTimeout(() => autocompleteList.classList.add('hidden'), 200);
+    });
 
-        const runCommand = async (event) => {
-          event.preventDefault();
-          try {
-            const response = await fetchJSON("/api/terminal/command", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ input: commandInput }),
-            });
-            if (response.status === "error") {
-              setCommandStatus(response.errorMessage || "Command failed");
-              return;
-            }
-            setCommandStatus(`Route: ${response.route} (${response.latencyMs}ms)`);
-            setActiveRoute(response.route);
-            setCommandInput("");
-            const latest = await fetchJSON("/api/terminal/commands?limit=12");
-            setCommandLogs(latest);
-          } catch (err) {
-            setCommandStatus(err instanceof Error ? err.message : String(err));
-          }
-        };
+    function addMessage(msg) {
+      messages.push(msg);
+      renderMessages();
+    }
 
-        useEffect(() => {
-          refresh();
-          const id = setInterval(refresh, 12000);
-          return () => clearInterval(id);
-        }, []);
-
-        useEffect(() => {
-          const onKeyDown = (event) => {
-            if (event.key === "Escape") {
-              setActiveRoute("overview");
-              return;
-            }
-            if (event.key === "k" && (event.ctrlKey || event.metaKey)) {
-              event.preventDefault();
-              const commandBox = document.getElementById("terminal-command-input");
-              if (commandBox) {
-                commandBox.focus();
-              }
-            }
+    function renderMessages() {
+      const container = document.getElementById('messages');
+      container.innerHTML = messages.map((msg, i) => {
+        if (msg.role === 'user') {
+          return `<div class="flex gap-2">
+            <div class="w-5 h-5 rounded bg-bb-orange/20 flex items-center justify-center text-bb-orange text-xs font-mono shrink-0">▶</div>
+            <div class="bb-panel p-2 flex-1">
+              <p class="text-sm text-bb-text-bright">${msg.content}</p>
+            </div>
+          </div>`;
+        }
+        if (msg.role === 'assistant') {
+          const intentColors = {
+            trade_action: 'text-bb-green',
+            analysis: 'text-bb-blue',
+            data_request: 'text-bb-orange',
+            feature_request: 'text-bb-purple',
+            general_query: 'text-bb-text-dim'
           };
-          window.addEventListener("keydown", onKeyDown);
-          return () => window.removeEventListener("keydown", onKeyDown);
-        }, []);
+          return `<div class="flex gap-2">
+            <div class="w-5 h-5 rounded bg-bb-green/20 flex items-center justify-center text-bb-green text-xs font-mono shrink-0">◆</div>
+            <div class="bb-panel p-3 flex-1">
+              ${msg.intent ? `<div class="mb-2 text-xs font-mono ${intentColors[msg.intent] || 'text-bb-text-dim'}">◆ ${msg.intent}</div>` : ''}
+              <div class="text-sm whitespace-pre-wrap text-bb-text-bright">${msg.content}</div>
+              ${msg.interpretation ? `<div class="mt-2 text-xs text-bb-text-dim border-t border-bb-border pt-2">${msg.interpretation}</div>` : ''}
+            </div>
+          </div>`;
+        }
+        return `<div class="bb-panel p-2 border-bb-red/30 bg-bb-red/5">
+          <p class="text-sm text-bb-red">${msg.content}</p>
+        </div>`;
+      }).join('');
+      container.scrollTop = container.scrollHeight;
+    }
 
-        useEffect(() => {
-          if (activeRoute === "overview") {
-            return;
-          }
-          const target = document.getElementById(`route-${activeRoute}`);
-          if (target) {
-            target.scrollIntoView({ behavior: "smooth", block: "start" });
-          }
-        }, [activeRoute]);
+    function showTypingIndicator() {
+      const container = document.getElementById('messages');
+      const indicator = document.createElement('div');
+      indicator.id = 'typing-indicator';
+      indicator.className = 'flex gap-2';
+      indicator.innerHTML = `
+        <div class="w-5 h-5 rounded bg-bb-green/20 flex items-center justify-center text-bb-green text-xs font-mono shrink-0">◆</div>
+        <div class="bb-panel p-2">
+          <div class="typing-indicator flex gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-bb-green/60"></span>
+            <span class="w-1.5 h-1.5 rounded-full bg-bb-green/60"></span>
+            <span class="w-1.5 h-1.5 rounded-full bg-bb-green/60"></span>
+          </div>
+        </div>`;
+      container.appendChild(indicator);
+      container.scrollTop = container.scrollHeight;
+    }
 
-        const timelineData = useMemo(() => {
-          return [...signals]
-            .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-            .map((signal, index) => ({
-              idx: index + 1,
-              score: Number((signal.score * 100).toFixed(1)),
-              confidence: Number((signal.impact.confidence * 100).toFixed(1)),
-              title: signal.event.title,
-            }));
-        }, [signals]);
+    function hideTypingIndicator() {
+      const indicator = document.getElementById('typing-indicator');
+      if (indicator) indicator.remove();
+    }
 
-        const sectorData = useMemo(() => {
-          return heatmap.slice(0, 8).map((item) => ({
-            sector: item.sector,
-            score: Number((item.weightedScore * 100).toFixed(1)),
-            signals: item.signalCount,
-          }));
-        }, [heatmap]);
-
-        const alertData = useMemo(() => {
-          const groups = { high: 0, medium: 0, low: 0 };
-          for (const alert of alerts.slice(0, 100)) {
-            groups[alert.severity] = (groups[alert.severity] ?? 0) + 1;
-          }
-          return [
-            { name: "High", value: groups.high, color: severityColor("high") },
-            { name: "Medium", value: groups.medium, color: severityColor("medium") },
-            { name: "Low", value: groups.low, color: severityColor("low") },
-          ];
-        }, [alerts]);
-
-        const supplySankeyData = useMemo(() => {
-          const nodes = (supplyGraph.nodes ?? []).slice(0, 12).map((node) => ({
-            name: `${node.ticker} (${node.sector})`,
-          }));
-          const nodeIndex = new Map(nodes.map((node, index) => [node.name.split(" ")[0], index]));
-          const links = (supplyGraph.edges ?? [])
-            .filter((edge) => nodeIndex.has(edge.from) && nodeIndex.has(edge.to))
-            .slice(0, 22)
-            .map((edge) => ({
-              source: nodeIndex.get(edge.from),
-              target: nodeIndex.get(edge.to),
-              value: Math.max(1, Math.round(edge.propagationScore * 100)),
-              relation: edge.relation,
-              confidence: edge.confidence,
-              score: edge.propagationScore,
-            }))
-            .filter((edge) => Number.isInteger(edge.source) && Number.isInteger(edge.target));
-
-          return {
-            nodes,
-            links,
-          };
-        }, [supplyGraph]);
-
-        const supplyFlowRows = useMemo(() => {
-          return (supplyGraph.nodes ?? [])
-            .slice(0, 10)
-            .map((node) => ({
-              ticker: node.ticker,
-              production: node.production ?? 0,
-              demand: node.demand ?? 0,
-              imports: node.imports ?? 0,
-              exports: node.exports ?? 0,
-              surplus: node.surplus ?? 0,
-            }));
-        }, [supplyGraph]);
-
-        return html`
-          <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-            <${motion.section}
-              initial=${{ opacity: 0, y: 20 }}
-              animate=${{ opacity: 1, y: 0 }}
-              transition=${{ duration: 0.45 }}
-              id="route-system"
-              className=${panelClass("system", activeRoute, "rounded-3xl border border-teal-200/15 bg-steel/75 p-6 shadow-glow backdrop-blur")}
-            >
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <p className="font-display text-sm uppercase tracking-[0.24em] text-teal-300/80">India Macro-Market Intelligence</p>
-                  <h1 className="mt-2 font-display text-2xl text-white sm:text-3xl">Policy + Tender + News Signal Terminal</h1>
-                  <p className="mt-2 max-w-3xl text-sm text-cloud">
-                    Explainable signals, confidence-ranked alerts, paper-trading feedback loops, and auditable provenance.
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick=${runPipeline}
-                    disabled=${running}
-                    className="rounded-xl border border-teal-300/40 bg-teal-400/10 px-4 py-2 text-sm font-semibold text-teal-200 transition hover:bg-teal-400/20 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    ${running ? "Running..." : "Run Pipeline"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick=${refresh}
-                    className="rounded-xl border border-slate-300/30 bg-slate-300/5 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-200/10"
-                  >
-                    Refresh
-                  </button>
-                </div>
+    // Load data
+    async function loadData() {
+      try {
+        const [signalsData, alertsData, portfolioData, heatmapData, pnlData] = await Promise.all([
+          fetchJSON('/api/signals?limit=15').catch(() => []),
+          fetchJSON('/api/alerts').catch(() => []),
+          fetchJSON('/api/mit/portfolio').catch(() => ({ positions: [] })),
+          fetchJSON('/api/heatmap').catch(() => []),
+          fetchJSON('/api/mit/pnl').catch(() => ({ unrealized: 0, realized: 0 }))
+        ]);
+        
+        // Signals
+        document.getElementById('signal-count').textContent = signalsData.length;
+        document.getElementById('status-signals').textContent = 'Signals: ' + signalsData.length;
+        const signalsList = document.getElementById('signals-list');
+        signalsList.innerHTML = signalsData.slice(0, 10).map(s => {
+          const dir = s.impact?.direction;
+          const color = dir === 'positive' ? 'text-bb-green' : dir === 'negative' ? 'text-bb-red' : 'text-bb-text-dim';
+          const ticker = s.linkedEntities?.[0]?.ticker || 'N/A';
+          return `<div class="p-2 border border-bb-border rounded cursor-pointer hover:bg-bb-surface" 
+            onclick="document.getElementById('chat-input').value='analyze ${ticker}';document.getElementById('chat-form').dispatchEvent(new Event('submit'));">
+            <div class="flex justify-between">
+              <span class="font-mono text-xs text-bb-text-bright">${ticker}</span>
+              <span class="font-mono text-xs ${color}">${pct(s.score)}</span>
+            </div>
+            <div class="text-xs text-bb-text-dim truncate mt-1">${s.event?.title || ''}</div>
+          </div>`;
+        }).join('');
+        
+        // Alerts
+        document.getElementById('alert-count').textContent = alertsData.length;
+        document.getElementById('status-alerts').textContent = 'Alerts: ' + alertsData.length;
+        const alertsList = document.getElementById('alerts-list');
+        const severityColors = { high: 'text-bb-red', medium: 'text-bb-yellow', low: 'text-bb-blue' };
+        alertsList.innerHTML = alertsData.slice(0, 10).map(a => `
+          <div class="p-2 border border-bb-border rounded">
+            <div class="flex justify-between">
+              <span class="font-mono text-xs ${severityColors[a.severity] || 'text-bb-text-dim'}">${a.severity?.toUpperCase()}</span>
+              <span class="font-mono text-xs text-bb-text-dim">${time(a.triggeredAt)}</span>
+            </div>
+            <div class="text-xs text-bb-text-dim truncate mt-1">${a.reason}</div>
+          </div>
+        `).join('');
+        
+        // Portfolio
+        const positions = portfolioData.positions || [];
+        document.getElementById('position-count').textContent = positions.length;
+        const portfolioList = document.getElementById('portfolio-list');
+        portfolioList.innerHTML = positions.slice(0, 10).map(p => {
+          const pnl = p.pnl || 0;
+          const color = pnl >= 0 ? 'text-bb-green' : 'text-bb-red';
+          return `<div class="p-2 border border-bb-border rounded cursor-pointer hover:bg-bb-surface"
+            onclick="document.getElementById('chat-input').value='analyze ${p.ticker}';document.getElementById('chat-form').dispatchEvent(new Event('submit'));">
+            <div class="flex justify-between">
+              <span class="font-mono text-xs text-bb-text-bright">${p.ticker}</span>
+              <span class="font-mono text-xs ${color}">${fmt(pnl)}</span>
+            </div>
+            <div class="text-xs text-bb-text-dim mt-1">${p.qty} shares @ ${fmt(p.avgPrice)}</div>
+          </div>`;
+        }).join('');
+        
+        // Heatmap
+        const heatmapList = document.getElementById('heatmap-list');
+        heatmapList.innerHTML = heatmapData.slice(0, 10).map(h => {
+          const score = h.weightedScore || 0;
+          const intensity = Math.min(1, Math.abs(score));
+          const color = score > 0 ? `rgba(0,204,102,${intensity})` : score < 0 ? `rgba(204,0,0,${intensity})` : '#2d2d2d';
+          return `<div class="p-2 border border-bb-border rounded" style="border-left: 3px solid ${color}">
+            <div class="flex justify-between">
+              <span class="font-mono text-xs text-bb-text-bright">${h.sector}</span>
+              <span class="font-mono text-xs" style="color:${color}">${pct(score)}</span>
+            </div>
+            <div class="text-xs text-bb-text-dim mt-1">${h.signalCount || 0} signals</div>
+          </div>`;
+        }).join('');
+        
+      } catch (err) {
+        console.error('Load error:', err);
+      }
+    }
+    
+    // Screener
+    window.runScreener = async function() {
+      const list = document.getElementById('screener-list');
+      list.innerHTML = '<div class="text-xs text-bb-text-dim p-2">Running screener...</div>';
+      try {
+        const result = await fetchJSON('/api/mit/screenipy/run');
+        const candidates = result.candidates || [];
+        list.innerHTML = candidates.slice(0, 10).map(c => `
+          <div class="p-2 border border-bb-border rounded cursor-pointer hover:bg-bb-surface"
+            onclick="document.getElementById('chat-input').value='analyze ${c.stock}';document.getElementById('chat-form').dispatchEvent(new Event('submit'));">
+            <div class="flex justify-between">
+              <span class="font-mono text-xs text-bb-text-bright">${c.stock}</span>
+              <span class="font-mono text-xs text-bb-green">${c.mitOverallScore || '-'}</span>
+            </div>
+            <div class="text-xs text-bb-text-dim mt-1">${c.price ? '₹' + fmt(c.price) : ''}</div>
+          </div>
+        `).join('');
+      } catch (err) {
+        list.innerHTML = `<div class="text-xs text-bb-red p-2">Error: ${err.message}</div>`;
+      }
+    };
+    
+    // Initial load
+    loadData();
+    loadPipelineStatus();
+    loadIdeas();
+    loadTrades();
+    setInterval(loadData, 30000);
+    
+    // Load pipeline status
+    async function loadPipelineStatus() {
+      try {
+        const latest = await fetchJSON('/api/mit/pipeline/latest').catch(() => null);
+        if (latest) {
+          document.getElementById('pipeline-last-run').textContent = latest.date || 'Unknown';
+          document.getElementById('pipeline-results').textContent = 
+            `${latest.ideas?.length || 0} ideas generated`;
+        }
+      } catch (err) {
+        console.error('Pipeline status error:', err);
+      }
+    }
+    
+    // Run pipeline
+    window.runPipeline = async function() {
+      document.getElementById('pipeline-status-text').textContent = 'Running...';
+      try {
+        const result = await fetchJSON('/api/mit/pipeline/run', { method: 'POST' });
+        document.getElementById('pipeline-status-text').textContent = result.status || 'Started';
+        document.getElementById('pipeline-last-run').textContent = result.runId || new Date().toISOString();
+        addMessage({ role: 'system', content: `Pipeline started: ${result.runId}` });
+        setTimeout(loadPipelineStatus, 2000);
+      } catch (err) {
+        document.getElementById('pipeline-status-text').textContent = 'Error';
+        addMessage({ role: 'system', content: `Pipeline error: ${err.message}` });
+      }
+    };
+    
+    // Load ideas
+    window.loadIdeas = async function() {
+      const list = document.getElementById('ideas-list');
+      list.innerHTML = '<div class="text-xs text-bb-text-dim p-2">Loading ideas...</div>';
+      try {
+        const ideas = await fetchJSON('/api/mit/daily-ideas').catch(() => []);
+        if (!ideas || ideas.length === 0) {
+          list.innerHTML = '<div class="text-xs text-bb-text-dim p-2">No ideas yet. Run pipeline first.</div>';
+          return;
+        }
+        list.innerHTML = ideas.slice(0, 15).map(idea => {
+          const score = idea.compositeScore?.total || 0;
+          const color = score >= 70 ? 'text-bb-green' : score >= 50 ? 'text-bb-yellow' : 'text-bb-text-dim';
+          const feedColor = idea.feed === 'nt-lite' ? 'text-bb-blue' : 'text-bb-purple';
+          return `<div class="p-2 border border-bb-border rounded cursor-pointer hover:bg-bb-surface"
+            onclick="document.getElementById('chat-input').value='analyze ${idea.ticker}';document.getElementById('chat-form').dispatchEvent(new Event('submit'));">
+            <div class="flex justify-between items-center">
+              <div>
+                <span class="font-mono text-xs text-bb-text-bright">${idea.ticker}</span>
+                <span class="font-mono text-xs ${feedColor} ml-1">[${idea.feed}]</span>
               </div>
-
-              ${error
-                ? html`<div className="mt-4 rounded-xl border border-red-300/40 bg-red-950/30 px-4 py-2 text-sm text-red-200">${error}</div>`
-                : null}
-
-              <form onSubmit=${runCommand} className="mt-4 rounded-2xl border border-teal-200/20 bg-slate-950/40 p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-display text-xs uppercase tracking-[0.2em] text-teal-200/80">Command</span>
-                  <input
-                    id="terminal-command-input"
-                    value=${commandInput}
-                    onInput=${(event) => setCommandInput(event.target.value)}
-                    placeholder="Type command: signals, heatmap, alerts, supply, watchlists, system"
-                    className="min-w-[260px] flex-1 rounded-lg border border-slate-400/30 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-teal-300/70"
-                  />
-                  <button
-                    type="submit"
-                    className="rounded-lg border border-teal-300/40 bg-teal-400/10 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-teal-100 hover:bg-teal-400/20"
-                  >
-                    Go
-                  </button>
-                </div>
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-cloud">
-                  <span>Shortcuts: Ctrl/Cmd + K focus, Esc reset</span>
-                  <span>${commandStatus || `Hints: ${COMMAND_HINTS.join(" | ")}`}</span>
-                </div>
-              </form>
-
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-2xl border border-slate-200/10 bg-slate-900/50 p-4">
-                  <p className="text-xs uppercase tracking-wider text-cloud">Signals tracked</p>
-                  <p className="mt-1 text-2xl font-semibold text-white">${signals.length}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-200/10 bg-slate-900/50 p-4">
-                  <p className="text-xs uppercase tracking-wider text-cloud">Active sectors</p>
-                  <p className="mt-1 text-2xl font-semibold text-white">${heatmap.length}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-200/10 bg-slate-900/50 p-4">
-                  <p className="text-xs uppercase tracking-wider text-cloud">Supply-chain edges</p>
-                  <p className="mt-1 text-2xl font-semibold text-white">${(supplyGraph.edges ?? []).length}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-200/10 bg-slate-900/50 p-4">
-                  <p className="text-xs uppercase tracking-wider text-cloud">Outcome hit-rate</p>
-                  <p className="mt-1 text-2xl font-semibold text-white">${pct(outcomes.hitRate ?? 0)}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-200/10 bg-slate-900/50 p-4">
-                  <p className="text-xs uppercase tracking-wider text-cloud">Avg realized return</p>
-                  <p className="mt-1 text-2xl font-semibold text-white">${pct(outcomes.averageReturn ?? 0)}</p>
-                </div>
+              <span class="font-mono text-xs ${color}">${score}</span>
+            </div>
+            <div class="text-xs text-bb-text-dim mt-1 truncate">${idea.thesis?.slice(0,60) || ''}...</div>
+          </div>`;
+        }).join('');
+      } catch (err) {
+        list.innerHTML = `<div class="text-xs text-bb-red p-2">Error: ${err.message}</div>`;
+      }
+    };
+    
+    // Load Hero analysis
+    window.loadHero = async function() {
+      const list = document.getElementById('hero-list');
+      list.innerHTML = '<div class="text-xs text-bb-text-dim p-2">Analyzing markets...</div>';
+      try {
+        const hero = await fetchJSON('/api/mit/hero/brief').catch(() => null);
+        if (!hero || !hero.hasHero) {
+          list.innerHTML = '<div class="text-xs text-bb-text-dim p-2">No hero pick. Run pipeline first.</div>';
+          return;
+        }
+        const pick = hero.heroPick;
+        list.innerHTML = `
+          <div class="p-3 border border-bb-yellow/30 rounded bg-bb-yellow/5">
+            <div class="flex justify-between items-center mb-2">
+              <span class="font-mono text-sm font-bold text-bb-yellow">★ HERO PICK</span>
+              <span class="font-mono text-xs text-bb-text-dim">Score: ${pick.compositeScore?.total || '-'}</span>
+            </div>
+            <div class="font-mono text-lg text-bb-text-bright mb-2">${pick.ticker}</div>
+            <div class="text-xs text-bb-text-dim mb-2">${hero.brief || ''}</div>
+            <button class="bb-btn px-3 py-1 rounded text-xs bg-bb-orange text-black" 
+              onclick="document.getElementById('chat-input').value='analyze ${pick.ticker}';document.getElementById('chat-form').dispatchEvent(new Event('submit'));">
+              ANALYZE
+            </button>
+          </div>
+          <div class="text-xs text-bb-text-dim mt-2">Other Top Candidates:</div>
+          ${(hero.heroPick ? [hero.heroPick] : []).concat(hero.validCandidates?.slice(0,4) || []).filter(x => x.ticker !== pick.ticker).map(c => `
+            <div class="p-2 border border-bb-border rounded cursor-pointer hover:bg-bb-surface"
+              onclick="document.getElementById('chat-input').value='analyze ${c.ticker}';document.getElementById('chat-form').dispatchEvent(new Event('submit'));">
+              <div class="flex justify-between">
+                <span class="font-mono text-xs text-bb-text-bright">${c.ticker}</span>
+                <span class="font-mono text-xs text-bb-green">${c.compositeScore?.total || '-'}</span>
               </div>
-            </${motion.section}>
-
-            <section className="mt-6 grid gap-4 xl:grid-cols-3">
-              <${motion.article}
-                initial=${{ opacity: 0, y: 18 }}
-                animate=${{ opacity: 1, y: 0 }}
-                transition=${{ delay: 0.1 }}
-                id="route-signals"
-                className=${panelClass("signals", activeRoute, "rounded-3xl border border-slate-200/10 bg-steel/60 p-4 xl:col-span-2")}
-              >
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="font-display text-lg text-white">Signal Momentum</h2>
-                  <span className="text-xs text-cloud">scores vs confidence</span>
-                </div>
-                <div className="h-72">
-                  <${ResponsiveContainer} width="100%" height="100%">
-                    <${AreaChart} data=${timelineData} margin=${{ top: 10, right: 16, left: -16, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="scoreGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#3dd6b5" stopOpacity=${0.45} />
-                          <stop offset="95%" stopColor="#3dd6b5" stopOpacity=${0.02} />
-                        </linearGradient>
-                      </defs>
-                      <${CartesianGrid} strokeDasharray="3 3" stroke="#25304a" />
-                      <${XAxis} dataKey="idx" stroke="#9fb4d5" />
-                      <${YAxis} stroke="#9fb4d5" />
-                      <${Tooltip}
-                        contentStyle=${{ background: "#0f172a", border: "1px solid #334155", borderRadius: 12 }}
-                        labelStyle=${{ color: "#e2e8f0" }}
-                      />
-                      <${Legend} />
-                      <${Area} type="monotone" dataKey="score" stroke="#3dd6b5" fill="url(#scoreGradient)" strokeWidth=${2} />
-                      <${Area} type="monotone" dataKey="confidence" stroke="#7ab8ff" fillOpacity=${0} strokeWidth=${2} />
-                    </${AreaChart}>
-                  </${ResponsiveContainer}>
-                </div>
-              </${motion.article}>
-
-              <${motion.article}
-                initial=${{ opacity: 0, y: 18 }}
-                animate=${{ opacity: 1, y: 0 }}
-                transition=${{ delay: 0.14 }}
-                className="rounded-3xl border border-slate-200/10 bg-steel/60 p-4"
-              >
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="font-display text-lg text-white">Alert Mix</h2>
-                  <span className="text-xs text-cloud">last 100 alerts</span>
-                </div>
-                <div className="h-72">
-                  <${ResponsiveContainer} width="100%" height="100%">
-                    <${PieChart}>
-                      <${Pie} data=${alertData} innerRadius=${58} outerRadius=${94} dataKey="value" nameKey="name" paddingAngle=${3}>
-                        ${alertData.map(
-                          (item) => html`<${Cell} key=${item.name} fill=${item.color} />`,
-                        )}
-                      </${Pie}>
-                      <${Tooltip}
-                        contentStyle=${{ background: "#0f172a", border: "1px solid #334155", borderRadius: 12 }}
-                        formatter=${(value) => [value, "alerts"]}
-                      />
-                      <${Legend} />
-                    </${PieChart}>
-                  </${ResponsiveContainer}>
-                </div>
-              </${motion.article}>
-            </section>
-
-            <section className="mt-4 grid gap-4 xl:grid-cols-3">
-              <${motion.article}
-                initial=${{ opacity: 0, y: 18 }}
-                animate=${{ opacity: 1, y: 0 }}
-                transition=${{ delay: 0.18 }}
-                id="route-heatmap"
-                className=${panelClass("heatmap", activeRoute, "rounded-3xl border border-slate-200/10 bg-steel/60 p-4 xl:col-span-2")}
-              >
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="font-display text-lg text-white">Sector Heatmap</h2>
-                  <span className="text-xs text-cloud">weighted score by sector</span>
-                </div>
-                <div className="h-72">
-                  <${ResponsiveContainer} width="100%" height="100%">
-                    <${BarChart} data=${sectorData} margin=${{ top: 8, right: 10, left: -20, bottom: 20 }}>
-                      <${CartesianGrid} strokeDasharray="3 3" stroke="#25304a" />
-                      <${XAxis} dataKey="sector" stroke="#9fb4d5" angle=${-20} textAnchor="end" interval=${0} />
-                      <${YAxis} stroke="#9fb4d5" />
-                      <${Tooltip}
-                        contentStyle=${{ background: "#0f172a", border: "1px solid #334155", borderRadius: 12 }}
-                        formatter=${(value, name) => [name === "score" ? `${value}%` : value, name]}
-                      />
-                      <${Bar} dataKey="score" fill="#3dd6b5" radius=${[8, 8, 0, 0]} />
-                    </${BarChart}>
-                  </${ResponsiveContainer}>
-                </div>
-              </${motion.article}>
-
-              <${motion.article}
-                initial=${{ opacity: 0, y: 18 }}
-                animate=${{ opacity: 1, y: 0 }}
-                transition=${{ delay: 0.22 }}
-                id="route-alerts"
-                className=${panelClass("alerts", activeRoute, "rounded-3xl border border-slate-200/10 bg-steel/60 p-4")}
-              >
-                <h2 className="font-display text-lg text-white">Recent Alerts</h2>
-                <div className="mt-3 space-y-2">
-                  ${alerts.slice(0, 7).map(
-                    (alert) => html`
-                      <div className="rounded-xl border border-slate-200/10 bg-slate-900/40 px-3 py-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-semibold" style=${{ color: severityColor(alert.severity) }}>
-                            ${alert.severity.toUpperCase()}
-                          </span>
-                          <span className="text-xs text-cloud">${new Date(alert.triggeredAt).toLocaleTimeString()}</span>
-                        </div>
-                        <p className="mt-1 text-xs text-slate-200">${alert.reason}</p>
-                      </div>
-                    `,
-                  )}
-                </div>
-              </${motion.article}>
-            </section>
-
-            <section className="mt-4 grid gap-4 xl:grid-cols-3">
-              <${motion.article}
-                initial=${{ opacity: 0, y: 18 }}
-                animate=${{ opacity: 1, y: 0 }}
-                transition=${{ delay: 0.16 }}
-                id="route-supply-chain"
-                className=${panelClass("supply-chain", activeRoute, "rounded-3xl border border-slate-200/10 bg-steel/60 p-4 xl:col-span-2")}
-              >
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="font-display text-lg text-white">Supply Chain Graph (Direct + Indirect)</h2>
-                  <span className="text-xs text-cloud">HTS propagation score weighted links</span>
-                </div>
-                <div className="h-72">
-                  <${ResponsiveContainer} width="100%" height="100%">
-                    <${Sankey}
-                      data=${supplySankeyData}
-                      nodePadding=${24}
-                      margin=${{ top: 8, right: 20, left: 20, bottom: 8 }}
-                      linkCurvature=${0.5}
-                    >
-                      <${Tooltip}
-                        contentStyle=${{ background: "#0f172a", border: "1px solid #334155", borderRadius: 12 }}
-                        formatter=${(value, _name, item) => {
-                          const payload = item?.payload ?? {};
-                          if (payload.relation) {
-                            return [`${value}`, `${payload.relation} | confidence ${(payload.confidence * 100).toFixed(1)}%`];
-                          }
-                          return [value, "flow"];
-                        }}
-                      />
-                    </${Sankey}>
-                  </${ResponsiveContainer}>
-                </div>
-              </${motion.article}>
-
-              <${motion.article}
-                initial=${{ opacity: 0, y: 18 }}
-                animate=${{ opacity: 1, y: 0 }}
-                transition=${{ delay: 0.2 }}
-                className="rounded-3xl border border-slate-200/10 bg-steel/60 p-4"
-              >
-                <h2 className="font-display text-lg text-white">Propagation Links</h2>
-                <div className="mt-3 space-y-2">
-                  ${(supplyGraph.edges ?? []).slice(0, 8).map(
-                    (edge) => html`
-                      <div className="rounded-xl border border-slate-200/10 bg-slate-900/40 px-3 py-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-semibold" style=${{ color: relationColor(edge.relation) }}>${edge.relation.toUpperCase()}</span>
-                          <span className="text-cloud">lag ${edge.lag} | ${(edge.confidence * 100).toFixed(1)}%</span>
-                        </div>
-                        <p className="mt-1 text-xs text-slate-200">${edge.from} -> ${edge.to}</p>
-                        <p className="mt-1 text-[11px] text-cloud">${edge.channel} | score ${edge.propagationScore.toFixed(2)}</p>
-                      </div>
-                    `,
-                  )}
-                </div>
-              </${motion.article}>
-            </section>
-
-            <section className="mt-4 rounded-3xl border border-slate-200/10 bg-steel/60 p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="font-display text-lg text-white">Supply Balance (Cities-Style)</h2>
-                <span className="text-xs text-cloud">production vs demand, imports and surplus</span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-600/30 text-cloud">
-                      <th className="px-2 py-1 text-left">Ticker</th>
-                      <th className="px-2 py-1 text-right">Production</th>
-                      <th className="px-2 py-1 text-right">Demand</th>
-                      <th className="px-2 py-1 text-right">Imports</th>
-                      <th className="px-2 py-1 text-right">Exports</th>
-                      <th className="px-2 py-1 text-right">Surplus</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${supplyFlowRows.map(
-                      (row) => html`
-                        <tr className="border-b border-slate-700/30 text-slate-100">
-                          <td className="px-2 py-1 font-semibold">${row.ticker}</td>
-                          <td className="px-2 py-1 text-right">${row.production.toFixed(1)}</td>
-                          <td className="px-2 py-1 text-right">${row.demand.toFixed(1)}</td>
-                          <td className="px-2 py-1 text-right text-orange-300">${row.imports.toFixed(1)}</td>
-                          <td className="px-2 py-1 text-right text-emerald-300">${row.exports.toFixed(1)}</td>
-                          <td className="px-2 py-1 text-right ${row.surplus >= 0 ? "text-emerald-300" : "text-orange-300"}">
-                            ${row.surplus.toFixed(1)}
-                          </td>
-                        </tr>
-                      `,
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
-            <section id="route-watchlists" className=${panelClass("watchlists", activeRoute, "mt-4 grid gap-4 rounded-3xl border border-slate-200/10 bg-steel/60 p-4 lg:grid-cols-2")}>
-              <article className="rounded-2xl border border-slate-200/10 bg-slate-900/40 p-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <h2 className="font-display text-lg text-white">Watchlists</h2>
-                  <span className="text-xs text-cloud">route target: watchlists</span>
-                </div>
-                <div className="space-y-2 text-sm text-slate-100">
-                  ${watchlists.map(
-                    (watchlist) => html`
-                      <div className="rounded-xl border border-slate-200/10 px-3 py-2">
-                        <p className="font-semibold">${watchlist.name}</p>
-                        <p className="mt-1 text-xs text-cloud">${watchlist.tickers.join(", ")}</p>
-                      </div>
-                    `,
-                  )}
-                </div>
-              </article>
-              <article className="rounded-2xl border border-slate-200/10 bg-slate-900/40 p-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <h2 className="font-display text-lg text-white">Command Telemetry</h2>
-                  <span className="text-xs text-cloud">latest 12 executions</span>
-                </div>
-                <div className="space-y-2 text-xs">
-                  ${commandLogs.map(
-                    (log) => html`
-                      <div className="rounded-xl border border-slate-200/10 px-3 py-2">
-                        <div className="flex items-center justify-between text-cloud">
-                          <span className="uppercase tracking-wider">${log.route}</span>
-                          <span>${log.latencyMs}ms</span>
-                        </div>
-                        <p className="mt-1 text-slate-100">${log.input || "<empty>"}</p>
-                        <p className="mt-1 text-cloud">${log.status}${log.errorMessage ? ` | ${log.errorMessage}` : ""}</p>
-                      </div>
-                    `,
-                  )}
-                </div>
-              </article>
-            </section>
-
-            <section className="mt-4 rounded-3xl border border-slate-200/10 bg-steel/60 p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="font-display text-lg text-white">Top Explainable Signals</h2>
-                <span className="text-xs text-cloud">auto-refreshed every 12s</span>
-              </div>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                ${(loading ? [] : signals.slice(0, 9)).map(
-                  (signal, index) => html`
-                    <${motion.article}
-                      key=${signal.id}
-                      initial=${{ opacity: 0, y: 16 }}
-                      animate=${{ opacity: 1, y: 0 }}
-                      transition=${{ delay: 0.05 * index }}
-                      className="rounded-2xl border border-slate-200/10 bg-slate-900/45 p-4"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <h3 className="text-sm font-semibold text-white">${signal.event.title}</h3>
-                        <span className="rounded-lg bg-teal-300/10 px-2 py-1 text-xs font-semibold text-teal-200">${pct(signal.score)}</span>
-                      </div>
-                      <p className="mt-2 text-xs ${signalColor(signal.impact.direction)}">
-                        ${signal.impact.direction.toUpperCase()} | ${signal.impact.horizon} | confidence ${pct(signal.impact.confidence)}
-                      </p>
-                      <p className="mt-2 line-clamp-3 text-xs text-cloud">${signal.event.evidenceSnippet}</p>
-                      <div className="mt-3 flex flex-wrap gap-1">
-                        ${signal.linkedEntities.slice(0, 3).map(
-                          (entity) => html`
-                            <span className="rounded-full border border-slate-200/20 px-2 py-0.5 text-[11px] text-slate-200">
-                              ${entity.ticker} ${pct(entity.confidence)}
-                            </span>
-                          `,
-                        )}
-                      </div>
-                    </${motion.article}>
-                  `,
-                )}
-              </div>
-            </section>
-          </main>
+            </div>
+          `).join('')}
         `;
+      } catch (err) {
+        list.innerHTML = `<div class="text-xs text-bb-red p-2">Error: ${err.message}</div>`;
       }
-
-      const root = createRoot(document.getElementById("app"));
-      root.render(html`<${App} />`);
-    </script>
-  </body>
+    };
+    
+    // Load closed trades
+    window.loadTrades = async function() {
+      const list = document.getElementById('trades-list');
+      list.innerHTML = '<div class="text-xs text-bb-text-dim p-2">Loading trades...</div>';
+      try {
+        const trades = await fetchJSON('/api/mit/trades').catch(() => []);
+        if (!trades || trades.length === 0) {
+          list.innerHTML = '<div class="text-xs text-bb-text-dim p-2">No closed trades yet.</div>';
+          return;
+        }
+        list.innerHTML = trades.slice(0, 15).map(t => {
+          const pnl = t.realizedPnl || 0;
+          const color = pnl >= 0 ? 'text-bb-green' : 'text-bb-red';
+          return `<div class="p-2 border border-bb-border rounded">
+            <div class="flex justify-between items-center">
+              <span class="font-mono text-xs text-bb-text-bright">${t.ticker}</span>
+              <span class="font-mono text-xs ${color}">${fmt(pnl)}</span>
+            </div>
+            <div class="text-xs text-bb-text-dim mt-1">${t.qty} shares | ${t.exitReason || 'N/A'}</div>
+            <div class="text-xs text-bb-text-dim">${t.exitDate ? new Date(t.exitDate).toLocaleDateString() : ''}</div>
+          </div>`;
+        }).join('');
+      } catch (err) {
+        list.innerHTML = `<div class="text-xs text-bb-red p-2">Error: ${err.message}</div>`;
+      }
+    };
+  </script>
+</body>
 </html>
