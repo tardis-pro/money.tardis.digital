@@ -428,7 +428,7 @@ export interface AlertRuleConfig {
   cooldownMinutes: number;
   escalationMinutes: number;
   suppressionWindowMinutes: number;
-  channels: Array<"terminal" | "email" | "webhook">;
+  channels: Array<"terminal" | "email" | "webhook" | "telegram">;
   ownerUserId: string;
   createdAt: string;
   updatedAt: string;
@@ -439,7 +439,7 @@ export interface AlertDispatchRecord {
   alertId: string;
   ruleId: string;
   userId: string;
-  channel: "terminal" | "email" | "webhook";
+  channel: "terminal" | "email" | "webhook" | "telegram";
   status: "delivered" | "suppressed" | "escalated";
   reason: string;
   dispatchedAt: string;

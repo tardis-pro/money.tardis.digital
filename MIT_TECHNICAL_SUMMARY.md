@@ -1,7 +1,7 @@
 # MIT Trading System - Technical Summary
 
 **Last Updated:** 2026-02-13
-**Status:** Production Ready - QVM Hardening Complete
+**Status:** Production Ready - QVM-Hybrid v3.2 Complete
 
 ---
 
@@ -9,15 +9,71 @@
 
 The MIT (Market Intelligence Trading) System is a production-ready NSE stock trading system with comprehensive QVM (Validation, Quality, Monitoring) hardening. It features two complementary trading strategies (NT-LITE and QUANT), full TimescaleDB persistence, idempotent pipeline operations, and enterprise-grade governance controls.
 
+The **QVM-Hybrid v3.2** update introduces the **"Manager-Supervised Swing Trading"** architecture with the **Hero Pick** system - a "Human-in-the-Loop" Decision Support System that presents only the single best trading opportunity to the user via Telegram with interactive Execute/Pass buttons.
+
 ### Key Metrics
 | Metric | Value |
 |--------|-------|
-| API Endpoints | 38 |
-| Service Classes | 26 |
+| API Endpoints | 42 |
+| Service Classes | 28 |
 | Database Tables | 15 (PostgreSQL + TimescaleDB) |
-| Technical Indicators | 7+ |
+| Technical Indicators | 11+ |
 | Compliance Score | 100% |
 | Data Provenance | Morningstar/Yahoo (no mocks) |
+
+---
+
+## QVM-Hybrid v3.2 - Hero Pick System
+
+### Architecture: The 5-Layer Stack
+
+| Layer | Component | Role |
+|-------|-----------|------|
+| L1 | **The Boss** | User (Telegram Client) |
+| L2 | **The Manager** | Orchestrator (`alert-orchestrator.ts`) |
+| L3 | **The Analyst** | Comparative Analysis (`hero-analyst.ts`) *(NEW)* |
+| L4 | **The Gatekeeper** | Compliance & Risk (`governance-filter.ts`) |
+| L5 | **The Engine** | Signal Generation (`screenipy-mit-connector.ts`) |
+
+### Hero Pick Scoring (0-100)
+
+| Factor | Weight | Metric | Logic |
+|--------|--------|--------|-------|
+| **Volatility** | 30% | ATR% | Lower is better (smooth movers) |
+| **Market Correlation** | 20% | Beta vs NIFTY 50 | 0.8-1.2 = High Score |
+| **Trend Consistency** | 30% | R² (90-day log-linear regression) | Higher = smoother uptrend |
+| **Sector Tailwind** | 20% | Sector Index vs SMAs | If SMA50>SMA200 = +20 pts |
+
+### Telegram Integration
+
+| Feature | Implementation |
+|---------|----------------|
+| **Inline Buttons** | ✅ Execute / Pass |
+| **Webhook Handler** | `POST /api/telegram/webhook` |
+| **Callback Processing** | Parses `hero_execute:*` / `hero_pass:*` |
+| **Confirmation Messages** | ✅ Hero Executed / Hero Rejected |
+
+**Environment Variables:**
+```
+TELEGRAM_BOT_TOKEN=    # Get from @BotFather
+TELEGRAM_CHAT_ID=      # Get from @userinfobot
+```
+
+### New API Endpoints (v3.2)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/mit/hero/analyze` | GET | Analyze candidates, return Hero picks |
+| `/api/mit/hero/brief` | GET | Get formatted Telegram message |
+| `/api/telegram/webhook` | POST | Handle button callbacks |
+
+### New Technical Indicators
+
+| Indicator | Status | Purpose |
+|-----------|--------|---------|
+| **Beta** | ✅ | Stock vs NIFTY 50 correlation |
+| **R²** | ✅ | Trend consistency (log-linear regression) |
+| **ATR%** | ✅ | ATR / Price for volatility scoring |
 
 ---
 
@@ -234,7 +290,7 @@ if (process.env.NODE_ENV === "production" && payload.snapshot.source === "manual
 
 ---
 
-## Service Architecture (26 Services)
+## Service Architecture (28 Services)
 
 ### Core Data Services
 
@@ -251,10 +307,11 @@ if (process.env.NODE_ENV === "production" && payload.snapshot.source === "manual
 | Service | File | Purpose |
 |---------|------|---------|
 | **CompositeScorer** | `composite-scorer.ts` | 100-point scoring (Quality:40, Growth:20, Valuation:15, Momentum:15, Governance:10) |
-| **TechnicalIndicators** | `technical-indicators.ts` | SMA/EMA, RSI, ATR, MACD, CCI, pattern detection, Z-score |
+| **TechnicalIndicators** | `technical-indicators.ts` | SMA/EMA, RSI, ATR, MACD, CCI, pattern detection, Z-score, **beta**, **rSquared** (NEW) |
 | **NtLiteChecklist** | `nt-lite-checklist.ts` | 8-item checklist (A/B/C/F grading) |
 | **EntryExitCalc** | `entry-exit-calc.ts` | Buy/stop/target computation with market tone awareness |
 | **PeerComparison** | `peer-comparison.ts` | Sector peer median PE calculation |
+| **HeroAnalyst** | `hero-analyst.ts` | **NEW** - Risk Rundown scoring for Hero Pick selection |
 
 ### Risk & Guard Services
 
@@ -266,7 +323,13 @@ if (process.env.NODE_ENV === "production" && payload.snapshot.source === "manual
 | **PnlLedger** | `pnl-ledger.ts` | P&L refresh, equity curve, peak equity, max drawdown |
 | **AnomalyDetector** | `anomaly-detector.ts` | Price shock, volume spike, volatility spike detection |
 | **MarketMode** | `market-mode.ts` | Market mode detection (risk-on/off), RSI ranges, DMA alignment |
-| **GovernanceFilter** | `governance-filter.ts` | Hard filters (promoter pledge <5%, clean audit, holding stability) |
+| **GovernanceFilter** | `governance-filter.ts` | Hard filters + liquidity check + penny stock filter (UPDATED) |
+
+### Notifications (NEW v3.2)
+
+| Service | File | Purpose |
+|---------|------|---------|
+| **TelegramNotificationService** | `telegram-notifier.ts` | Telegram bot with inline buttons for Execute/Pass |
 
 ### Portfolio & Trading
 
@@ -347,11 +410,14 @@ if (process.env.NODE_ENV === "production" && payload.snapshot.source === "manual
 | **MACD** | ✅ | MACD line + Signal line + Histogram |
 | **CCI** | ✅ | 20-period Commodity Channel Index |
 | **ATR** | ✅ | 14-period Average True Range |
+| **ATR%** | ✅ | ATR / Price (NEW - for volatility scoring) |
 | **DMA** | ✅ | 20/50/100/200-day Moving Averages |
 | **Pattern Detection** | ✅ | Bullish Engulfing, Hammer, Doji, Breakout |
 | **Trend Classification** | ✅ | Strong Up, Up, Sideways, Weak, Down |
 | **Return Z-Score** | ✅ | Price return percentile ranking |
 | **Pullback %** | ✅ | Price pullback from highs |
+| **Beta** | ✅ | Stock vs NIFTY 50 correlation (NEW) |
+| **R²** | ✅ | Trend consistency (log-linear regression, NEW) |
 
 ---
 
@@ -548,14 +614,18 @@ UNION ALL SELECT 'daily_runs', COUNT(*) FROM mit.daily_runs;"
 
 | File | Purpose |
 |------|---------|
-| `src/mit-routes.ts` | All 38 API endpoints |
+| `src/mit-routes.ts` | All 42 API endpoints |
 | `src/mit-store.ts` | JSON persistence |
 | `src/mit-store-postgres.ts` | PostgreSQL/TimescaleDB persistence |
 | `src/mit-types.ts` | Type definitions (30+ interfaces) |
-| `src/services/mit/` | All 26 service implementations |
+| `src/services/mit/hero-analyst.ts` | **NEW** - Hero Pick scoring |
+| `src/services/telegram-notifier.ts` | **NEW** - Telegram integration |
+| `src/services/mit/governance-filter.ts` | **UPDATED** - Liquidity + penny stock |
+| `src/services/mit/technical-indicators.ts` | **UPDATED** - beta + rSquared |
+| `src/config/mit-strategy.json` | **NEW** - Strategy config |
+| `src/services/mit/` | All 28 service implementations |
 | `docker-compose.yml` | Infrastructure |
-| `.sisyphus/plans/mit-qvm-hardening-and-proof.md` | Hardening plan |
-| `.sisyphus/PROOF_OF_WORK.md` | Verification pack |
+| `docs/specs/QVM-Hybrid-v3.2-Spec.md` | Technical specification |
 
 ---
 
@@ -565,16 +635,26 @@ UNION ALL SELECT 'daily_runs', COUNT(*) FROM mit.daily_runs;"
 # 1. Start Docker
 docker compose up -d
 
-# 2. Verify containers
+# 2. Configure Telegram (add to .env)
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
+
+# 3. Verify containers
 docker ps --filter "name=mit"
 
-# 3. Run pipeline
+# 4. Run pipeline
 curl -X POST http://localhost:3000/api/mit/pipeline/run
 
-# 4. Get ideas
+# 5. Get ideas
 curl http://localhost:3000/api/mit/daily-ideas
 
-# 5. View portfolio
+# 6. Get hero analysis
+curl http://localhost:3000/api/mit/hero/analyze
+
+# 7. Get Telegram brief
+curl http://localhost:3000/api/mit/hero/brief
+
+# 8. View portfolio
 curl http://localhost:3000/api/mit/portfolio
 ```
 

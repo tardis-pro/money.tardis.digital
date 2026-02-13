@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Store } from "../store.js";
 import type { AlertDispatchRecord, AlertQualitySnapshot, AlertRuleConfig } from "../types.js";
 import { makeId, nowIso } from "../utils.js";
+import type { HeroScore } from "./mit/hero-analyst.js";
 
 const ruleSchema = z.object({
   name: z.string().min(2).max(80),
@@ -16,6 +17,26 @@ const ruleSchema = z.object({
 });
 
 export type CreateAlertRuleInput = z.infer<typeof ruleSchema>;
+
+export function formatHeroBrief(hero: HeroScore, scannedCount: number, validCount: number, portfolioCapital: number): string {
+  const plan = hero.candidate.entryExitPlan;
+  const riskAmount = (plan.stopLossPct * plan.buyZoneHigh) / 100 * portfolioCapital;
+  const riskPct = plan.stopLossPct * 100;
+
+  return `🧠 Safe Choice Bot Analysis
+Scanned ${scannedCount} stocks. Found ${validCount} valid breakouts.
+
+🏆 HERO PICK: ${hero.symbol}
+Score: ${hero.totalScore}/100
+Why: ${hero.narrative}
+Metrics: Beta ${hero.metrics.beta.toFixed(2)} | Trend Stability ${(hero.metrics.r2 * 100).toFixed(0)}%
+
+Trade Details:
+Buy @ ${plan.buyZoneHigh.toFixed(0)} | Stop @ ${plan.stopLoss.toFixed(0)} | Target @ ${plan.firstTarget.toFixed(0)}
+Risk: ₹${riskAmount.toFixed(0)} (${riskPct.toFixed(1)}% of capital)
+
+[ EXECUTE HERO TRADE ]   [ PASS ]`;
+}
 
 export class AlertOrchestratorService {
   constructor(private readonly store: Store) {}

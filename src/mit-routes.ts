@@ -21,10 +21,12 @@ import { holdingsCsv, closedTradesCsv } from "./services/mit/csv-export.js";
 import { buildWeeklyReport } from "./services/mit/weekly-report.js";
 import { buildMonthlyReport } from "./services/mit/monthly-report.js";
 import { upsertDailyRun } from "./services/mit/daily-pipeline.js";
-import { evaluateHardGovernanceFilters } from "./services/mit/governance-filter.js";
+import { evaluateHardGovernanceFilters, checkLiquidity, checkPennyStock } from "./services/mit/governance-filter.js";
 import { detectMarketMode } from "./services/mit/market-mode.js";
 import { detectMitAnomalies } from "./services/mit/anomaly-detector.js";
 import { FundamentalsProviderService } from "./services/mit/fundamentals-provider.js";
+import { HeroAnalyst, type HeroAnalysisResult } from "./services/mit/hero-analyst.js";
+import { formatHeroBrief } from "./services/alert-orchestrator.js";
 
 const manualFundamentalSchema = z.object({
   ticker: z.string().min(1),
@@ -686,6 +688,95 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
       return reply.code(404).send({ error: "No runs" });
     }
     return latest.ideas;
+  });
+
+  app.get("/api/mit/hero/analyze", async (request, reply) => {
+    const state = await deps.mitStore.read();
+    const latest = [...state.dailyRuns].sort((a, b) => b.date.localeCompare(a.date))[0];
+    if (!latest) {
+      return reply.code(404).send({ error: "No runs" });
+    }
+
+    const validCandidates = latest.ideas.filter(idea => {
+      if (idea.isAvoid) return false;
+      if (!idea.entryExitPlan || !idea.technicals || !idea.fundamentals) return false;
+      
+      const price = idea.technicals.latestClose;
+      const volume = idea.technicals.latestVolume;
+      
+      if (checkPennyStock(price)) return false;
+      
+      const liquidity = checkLiquidity(price, volume);
+      if (!liquidity.pass) return false;
+      
+      return true;
+    });
+
+    if (validCandidates.length === 0) {
+      return {
+        scanned: latest.ideas.length,
+        validCandidates: 0,
+        heroPick: null,
+        message: "No valid candidates after filtering",
+      };
+    }
+
+    const heroAnalyst = new HeroAnalyst();
+    heroAnalyst.setMarketDataService(marketData);
+    
+    const result: HeroAnalysisResult = await heroAnalyst.analyzeCandidates(validCandidates);
+    return result;
+  });
+
+  app.get("/api/mit/hero/brief", async (request, reply) => {
+    const state = await deps.mitStore.read();
+    const latest = [...state.dailyRuns].sort((a, b) => b.date.localeCompare(a.date))[0];
+    if (!latest) {
+      return reply.code(404).send({ error: "No runs" });
+    }
+
+    const validCandidates = latest.ideas.filter(idea => {
+      if (idea.isAvoid) return false;
+      if (!idea.entryExitPlan || !idea.technicals || !idea.fundamentals) return false;
+      
+      const price = idea.technicals.latestClose;
+      const volume = idea.technicals.latestVolume;
+      
+      if (checkPennyStock(price)) return false;
+      
+      const liquidity = checkLiquidity(price, volume);
+      if (!liquidity.pass) return false;
+      
+      return true;
+    });
+
+    if (validCandidates.length === 0) {
+      return {
+        hasHero: false,
+        message: "No valid candidates",
+      };
+    }
+
+    const heroAnalyst = new HeroAnalyst();
+    heroAnalyst.setMarketDataService(marketData);
+    
+    const result = await heroAnalyst.analyzeCandidates(validCandidates);
+    
+    if (!result.heroPick) {
+      return {
+        hasHero: false,
+        message: "Could not determine hero pick",
+      };
+    }
+
+    const capital = state.portfolio.settings.capital;
+    const formattedBrief = formatHeroBrief(result.heroPick, result.scanned, result.validCandidates, capital);
+    
+    return {
+      hasHero: true,
+      heroPick: result.heroPick,
+      brief: formattedBrief,
+    };
   });
 
   app.get("/api/mit/portfolio", async () => {

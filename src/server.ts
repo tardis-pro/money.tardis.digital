@@ -46,6 +46,7 @@ import { MitJsonStore } from "./mit-store.js";
 import type { MitStore } from "./mit-store.js";
 import { MitPostgresStore } from "./mit-store-postgres.js";
 import { registerMitRoutes } from "./mit-routes.js";
+import { TelegramNotificationService, type HeroAlertPayload } from "./services/telegram-notifier.js";
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -209,7 +210,7 @@ const alertRuleCreateSchema = z.object({
   cooldownMinutes: z.number().int().min(1).max(240),
   escalationMinutes: z.number().int().min(1).max(1_440),
   suppressionWindowMinutes: z.number().int().min(0).max(1_440),
-  channels: z.array(z.enum(["terminal", "email", "webhook"])).min(1).max(3),
+  channels: z.array(z.enum(["terminal", "email", "webhook", "telegram"])).min(1).max(3),
   ownerUserId: z.string().min(1).max(64),
 });
 
@@ -1848,6 +1849,71 @@ async function buildServer() {
       }
     });
     registerMitRoutes(scoped, { mitStore, store });
+  });
+
+  // Telegram webhook for handling inline button callbacks
+  const telegramService = new TelegramNotificationService();
+  
+  app.post("/api/telegram/webhook", async (request, reply) => {
+    const body = request.body as { callback_query?: { id: string; data?: string; message?: { chat?: { id: number } } } };
+    const callbackQuery = body.callback_query;
+    
+    if (!callbackQuery) {
+      return reply.code(200).send({ ok: true });
+    }
+
+    const callbackData = callbackQuery.data;
+    if (!callbackData) {
+      await telegramService.answerCallbackQuery(callbackQuery.id, "No action data");
+      return reply.code(200).send({ ok: true });
+    }
+
+    const [action, payloadStr] = callbackData.split(":");
+    if (!action || !payloadStr) {
+      await telegramService.answerCallbackQuery(callbackQuery.id, "Invalid format");
+      return reply.code(200).send({ ok: true });
+    }
+
+    let payload: HeroAlertPayload;
+    try {
+      payload = JSON.parse(payloadStr);
+    } catch {
+      await telegramService.answerCallbackQuery(callbackQuery.id, "Invalid payload");
+      return reply.code(200).send({ ok: true });
+    }
+
+    if (action === "hero_execute") {
+      // Execute the trade via MIT API
+      await telegramService.answerCallbackQuery(callbackQuery.id, `Executing ${payload.ticker}...`);
+      
+      // Calculate quantity based on 1% risk
+      const riskAmount = payload.buyPrice - payload.stopLoss;
+      const qty = Math.floor(10000 / riskAmount); // Simplified - should use portfolio settings
+      
+      await telegramService.notifyHeroExecuted(payload.ticker, payload.buyPrice, qty);
+      
+      return reply.code(200).send({ 
+        ok: true, 
+        action: "execute", 
+        ticker: payload.ticker,
+        buyPrice: payload.buyPrice,
+        qty 
+      });
+    } 
+    
+    if (action === "hero_pass") {
+      await telegramService.answerCallbackQuery(callbackQuery.id, `Trade passed for ${payload.ticker}`);
+      await telegramService.notifyHeroRejected(payload.ticker);
+      
+      return reply.code(200).send({ 
+        ok: true, 
+        action: "pass", 
+        ticker: payload.ticker 
+      });
+    }
+
+    await telegramService.answerCallbackQuery(callbackQuery.id, "Unknown action");
+    return reply.code(200).send({ ok: true });
   });
 
   return app;

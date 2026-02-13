@@ -1,0 +1,33 @@
+{
+  "risk": {
+    "max_daily_risk_pct": 1.0,
+    "max_open_positions": 5,
+    "min_turnover_cr": 5,
+    "min_price": 50,
+    "max_debt_equity": 1.0,
+    "min_roce_roe": 15
+  },
+  "scoring": {
+    "weights": {
+      "volatility": 0.3,
+      "trend": 0.3,
+      "correlation": 0.2,
+      "sector": 0.2
+    },
+    "thresholds": {
+      "max_beta": 1.5,
+      "min_r2": 0.5
+    }
+  },
+  "hero": {
+    "enabled": true,
+    "max_candidates": 10,
+    "fallback_enabled": true
+  },
+  "disaster_recovery": {
+    "immediate_stop_loss_pct": 5,
+    "immediate_stop_loss_minutes": 30,
+    "blacklist_duration_days": 30,
+    "failover_to_rank_2": true
+  }
+}

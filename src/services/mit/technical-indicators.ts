@@ -271,3 +271,150 @@ function pctDistance(price: number, reference: number | null): number | null {
   }
   return ((price - reference) / reference) * 100;
 }
+
+/**
+ * Calculate Beta of a stock vs benchmark (NIFTY 50)
+ * Beta measures the stock's volatility relative to the benchmark.
+ * Beta = Cov(Stock, Benchmark) / Var(Benchmark)
+ * 
+ * @param stockReturns - Daily returns of the stock
+ * @param benchmarkReturns - Daily returns of the benchmark (NIFTY 50)
+ * @returns Beta value or null if insufficient data
+ */
+export function beta(stockReturns: number[], benchmarkReturns: number[]): number | null {
+  if (stockReturns.length < 30 || benchmarkReturns.length < 30) {
+    return null;
+  }
+  
+  // Align arrays to same length (use minimum)
+  const n = Math.min(stockReturns.length, benchmarkReturns.length);
+  const stock = stockReturns.slice(-n);
+  const benchmark = benchmarkReturns.slice(-n);
+  
+  // Calculate means
+  const stockMean = stock.reduce((sum, v) => sum + v, 0) / n;
+  const benchmarkMean = benchmark.reduce((sum, v) => sum + v, 0) / n;
+  
+  // Calculate covariance and variance
+  let covariance = 0;
+  let benchmarkVariance = 0;
+  
+  for (let i = 0; i < n; i++) {
+    const stockDev = stock[i]! - stockMean;
+    const benchmarkDev = benchmark[i]! - benchmarkMean;
+    covariance += stockDev * benchmarkDev;
+    benchmarkVariance += benchmarkDev * benchmarkDev;
+  }
+  
+  covariance /= n;
+  benchmarkVariance /= n;
+  
+  if (benchmarkVariance === 0) {
+    return null;
+  }
+  
+  return covariance / benchmarkVariance;
+}
+
+/**
+ * Calculate R-squared (Coefficient of Determination) for a trendline
+ * Measures how well the trendline fits the data (0-1, higher is better)
+ * 
+ * @param prices - Array of closing prices
+ * @returns R-squared value (0-1) or null if insufficient data
+ */
+export function rSquared(prices: number[]): number | null {
+  if (prices.length < 10) {
+    return null;
+  }
+  
+  // Use log prices for percentage-based trend analysis
+  const logPrices = prices.map(p => Math.log(p));
+  const n = logPrices.length;
+  
+  // Calculate linear regression: y = mx + b
+  // Where y = log(price), x = time index
+  let sumX = 0;
+  let sumY = 0;
+  let sumXY = 0;
+  let sumXX = 0;
+  
+  for (let i = 0; i < n; i++) {
+    sumX += i;
+    const logPrice = logPrices[i];
+    if (logPrice === undefined) continue;
+    sumY += logPrice;
+    sumXY += i * logPrice;
+    sumXX += i * i;
+  }
+  
+  const xMean = sumX / n;
+  const yMean = sumY / n;
+  
+  const denominator = n * sumXX - sumX * sumX;
+  if (denominator === 0) {
+    return null;
+  }
+  
+  const slope = (n * sumXY - sumX * sumY) / denominator;
+  const intercept = (sumY - slope * sumX) / n;
+  
+  // Calculate R-squared
+  // SSres = sum((y - y_predicted)^2)
+  // SStot = sum((y - y_mean)^2)
+  // R2 = 1 - SSres/SStot
+  
+  let ssRes = 0;
+  let ssTot = 0;
+  
+  for (let i = 0; i < n; i++) {
+    const yPredicted = slope * i + intercept;
+    const yActual = logPrices[i];
+    if (yActual === undefined) continue;
+    ssRes += Math.pow(yActual - yPredicted, 2);
+    ssTot += Math.pow(yActual - yMean, 2);
+  }
+  
+  if (ssTot === 0) {
+    return null;
+  }
+  
+  return 1 - (ssRes / ssTot);
+}
+
+/**
+ * Calculate ATR percentage (ATR / Price) for volatility scoring
+ * @param candles - Array of daily candles
+ * @param period - ATR period (default 14)
+ * @returns ATR% as decimal (e.g., 0.02 = 2%) or null
+ */
+export function atrPct(candles: DailyCandle[], period: number = 14): number | null {
+  const atrValue = atr(candles, period);
+  if (atrValue === null || candles.length === 0) {
+    return null;
+  }
+  
+  const latestClose = candles[candles.length - 1]?.close;
+  if (latestClose === undefined || latestClose === 0) {
+    return null;
+  }
+  
+  return atrValue / latestClose;
+}
+
+/**
+ * Calculate daily returns from price data
+ * @param prices - Array of closing prices
+ * @returns Array of daily returns (as decimals)
+ */
+export function calculateReturns(prices: number[]): number[] {
+  const returns: number[] = [];
+  for (let i = 1; i < prices.length; i++) {
+    const prevPrice = prices[i - 1];
+    const currentPrice = prices[i];
+    if (prevPrice !== 0 && prevPrice !== undefined && currentPrice !== undefined) {
+      returns.push((currentPrice - prevPrice) / prevPrice);
+    }
+  }
+  return returns;
+}
