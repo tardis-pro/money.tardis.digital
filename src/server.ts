@@ -502,13 +502,21 @@ async function buildServer() {
   });
 
   app.get("/terminal", async (_request, reply) => {
-    const html = await getHtml();
-    return reply.type("text/html").send(html);
+    try {
+      const html = await readFile(path.join(process.cwd(), "dist/terminal/index.html"), "utf-8");
+      return reply.type("text/html").send(html);
+    } catch {
+      return reply.code(404).send("Terminal not found - run npm run build:terminal");
+    }
   });
 
   app.get("/terminal.html", async (_request, reply) => {
-    const html = await getHtml();
-    return reply.type("text/html").send(html);
+    try {
+      const html = await readFile(path.join(process.cwd(), "dist/terminal/index.html"), "utf-8");
+      return reply.type("text/html").send(html);
+    } catch {
+      return reply.code(404).send("Terminal not found - run npm run build:terminal");
+    }
   });
 
   app.get("/api/sources", async (request, reply) => {
