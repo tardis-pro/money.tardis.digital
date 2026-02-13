@@ -53,6 +53,14 @@ The **QVM-Hybrid v3.2** update introduces the **"Manager-Supervised Swing Tradin
 | **Callback Processing** | Parses `hero_execute:*` / `hero_pass:*` |
 | **Confirmation Messages** | ✅ Hero Executed / Hero Rejected |
 
+**Telegram Commands:**
+| Command | Description |
+|---------|-------------|
+| `/hero` | Get current hero pick with Execute/Pass buttons |
+| `/why` | See why this stock was selected (brainstorming logic) |
+| `/status` | Portfolio surveillance status (kill switch, blacklist, drift) |
+| `/help` | Show available commands |
+
 **Environment Variables:**
 ```
 TELEGRAM_BOT_TOKEN=    # Get from @BotFather
@@ -330,6 +338,7 @@ if (process.env.NODE_ENV === "production" && payload.snapshot.source === "manual
 | Service | File | Purpose |
 |---------|------|---------|
 | **TelegramNotificationService** | `telegram-notifier.ts` | Telegram bot with inline buttons for Execute/Pass |
+| **SurveillanceBot** | `surveillance-bot.ts` | Post-trade monitoring, kill switch, blacklist, drift detection |
 
 ### Portfolio & Trading
 
@@ -528,6 +537,22 @@ if (process.env.NODE_ENV === "production" && payload.snapshot.source === "manual
 | **Risk-Off** | 3% | 40-55 | Below 200DMA |
 | **Neutral** | 5% | 45-65 | Mixed |
 
+### Surveillance Bot (v3.2)
+
+| Feature | Implementation |
+|---------|----------------|
+| **Kill Switch** | Triggers at >2% daily loss → Liquidate All |
+| **Blacklist** | Failed Hero stocks added for 30-day cooldown |
+| **Drift Monitor** | Detects position drift vs expected values |
+| **Why Explanation** | Generates detailed reasoning for Hero pick |
+
+### Disaster Recovery
+
+| Scenario | Protocol |
+|----------|----------|
+| **Hero Stock Crashes** | Hard stop always sent with entry → Blacklist 30 days → Re-evaluate Runner Up |
+| **Data Feed Failure** | Sleep mode with 60s retry → SMS alert if down > 10 mins |
+
 ---
 
 ## Scoring System (100 Points)
@@ -619,6 +644,7 @@ UNION ALL SELECT 'daily_runs', COUNT(*) FROM mit.daily_runs;"
 | `src/mit-store-postgres.ts` | PostgreSQL/TimescaleDB persistence |
 | `src/mit-types.ts` | Type definitions (30+ interfaces) |
 | `src/services/mit/hero-analyst.ts` | **NEW** - Hero Pick scoring |
+| `src/services/mit/surveillance-bot.ts` | **NEW** - Kill switch, blacklist, drift monitoring |
 | `src/services/telegram-notifier.ts` | **NEW** - Telegram integration |
 | `src/services/mit/governance-filter.ts` | **UPDATED** - Liquidity + penny stock |
 | `src/services/mit/technical-indicators.ts` | **UPDATED** - beta + rSquared |

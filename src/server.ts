@@ -47,6 +47,7 @@ import type { MitStore } from "./mit-store.js";
 import { MitPostgresStore } from "./mit-store-postgres.js";
 import { registerMitRoutes } from "./mit-routes.js";
 import { TelegramNotificationService, type HeroAlertPayload } from "./services/telegram-notifier.js";
+import { SurveillanceBot, getSurveillanceBot } from "./services/mit/surveillance-bot.js";
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -1851,68 +1852,240 @@ async function buildServer() {
     registerMitRoutes(scoped, { mitStore, store });
   });
 
-  // Telegram webhook for handling inline button callbacks
+  // Telegram webhook for handling inline button callbacks and commands
   const telegramService = new TelegramNotificationService();
+  const surveillanceBot = getSurveillanceBot();
   
   app.post("/api/telegram/webhook", async (request, reply) => {
-    const body = request.body as { callback_query?: { id: string; data?: string; message?: { chat?: { id: number } } } };
+    const body = request.body as { 
+      callback_query?: { id: string; data?: string; message?: { chat?: { id: number } } };
+      message?: { text?: string; chat?: { id: number } };
+    };
+    
+    // Handle callback queries (button clicks)
     const callbackQuery = body.callback_query;
+    if (callbackQuery) {
+      const callbackData = callbackQuery.data;
+      if (!callbackData) {
+        await telegramService.answerCallbackQuery(callbackQuery.id, "No action data");
+        return reply.code(200).send({ ok: true });
+      }
+
+      const [action, payloadStr] = callbackData.split(":");
+      if (!action || !payloadStr) {
+        await telegramService.answerCallbackQuery(callbackQuery.id, "Invalid format");
+        return reply.code(200).send({ ok: true });
+      }
+
+      let payload: HeroAlertPayload;
+      try {
+        payload = JSON.parse(payloadStr);
+      } catch {
+        await telegramService.answerCallbackQuery(callbackQuery.id, "Invalid payload");
+        return reply.code(200).send({ ok: true });
+      }
+
+      if (action === "hero_execute") {
+        await telegramService.answerCallbackQuery(callbackQuery.id, `Executing ${payload.ticker}...`);
+        
+        const riskAmount = payload.buyPrice - payload.stopLoss;
+        const qty = Math.floor(10000 / riskAmount);
+        
+        await telegramService.notifyHeroExecuted(payload.ticker, payload.buyPrice, qty);
+        
+        return reply.code(200).send({ 
+          ok: true, 
+          action: "execute", 
+          ticker: payload.ticker,
+          buyPrice: payload.buyPrice,
+          qty 
+        });
+      } 
+      
+      if (action === "hero_pass") {
+        await telegramService.answerCallbackQuery(callbackQuery.id, `Trade passed for ${payload.ticker}`);
+        await telegramService.notifyHeroRejected(payload.ticker);
+        
+        return reply.code(200).send({ 
+          ok: true, 
+          action: "pass", 
+          ticker: payload.ticker 
+        });
+      }
+
+      await telegramService.answerCallbackQuery(callbackQuery.id, "Unknown action");
+      return reply.code(200).send({ ok: true });
+    }
     
-    if (!callbackQuery) {
-      return reply.code(200).send({ ok: true });
-    }
-
-    const callbackData = callbackQuery.data;
-    if (!callbackData) {
-      await telegramService.answerCallbackQuery(callbackQuery.id, "No action data");
-      return reply.code(200).send({ ok: true });
-    }
-
-    const [action, payloadStr] = callbackData.split(":");
-    if (!action || !payloadStr) {
-      await telegramService.answerCallbackQuery(callbackQuery.id, "Invalid format");
-      return reply.code(200).send({ ok: true });
-    }
-
-    let payload: HeroAlertPayload;
-    try {
-      payload = JSON.parse(payloadStr);
-    } catch {
-      await telegramService.answerCallbackQuery(callbackQuery.id, "Invalid payload");
-      return reply.code(200).send({ ok: true });
-    }
-
-    if (action === "hero_execute") {
-      // Execute the trade via MIT API
-      await telegramService.answerCallbackQuery(callbackQuery.id, `Executing ${payload.ticker}...`);
+    // Handle commands (/why, /hero, /surveillance, /status)
+    const message = body.message;
+    if (message?.text) {
+      const chatId = message.chat?.id;
+      const command = message.text.split(" ")[0]?.toLowerCase();
       
-      // Calculate quantity based on 1% risk
-      const riskAmount = payload.buyPrice - payload.stopLoss;
-      const qty = Math.floor(10000 / riskAmount); // Simplified - should use portfolio settings
+      if (!chatId) {
+        return reply.code(200).send({ ok: true });
+      }
       
-      await telegramService.notifyHeroExecuted(payload.ticker, payload.buyPrice, qty);
+      if (command === "/why") {
+        const mitState = await mitStore.read();
+        const latest = [...mitState.dailyRuns].sort((a, b) => b.date.localeCompare(a.date))[0];
+        
+        if (!latest) {
+          await telegramService.sendMessage("No analysis available. Run pipeline first.");
+          return reply.code(200).send({ ok: true });
+        }
+        
+        const validCandidates = latest.ideas.filter(idea => !idea.isAvoid && idea.entryExitPlan);
+        if (validCandidates.length === 0) {
+          await telegramService.sendMessage("No valid candidates available.");
+          return reply.code(200).send({ ok: true });
+        }
+        
+        const heroAnalysis = await mitStore.transaction(async (draft) => {
+          const { HeroAnalyst } = await import("./services/mit/hero-analyst.js");
+          const { MarketDataService } = await import("./services/mit/market-data.js");
+          
+          const analyst = new HeroAnalyst();
+          analyst.setMarketDataService(new MarketDataService());
+          
+          return await analyst.analyzeCandidates(validCandidates);
+        });
+        
+        if (!heroAnalysis?.heroPick) {
+          await telegramService.sendMessage("Could not determine hero pick.");
+          return reply.code(200).send({ ok: true });
+        }
+        
+        const explanation = surveillanceBot.generateWhyExplanation(
+          heroAnalysis.heroPick,
+          heroAnalysis.allCandidates
+        );
+        
+        await telegramService.sendMessage(explanation);
+        return reply.code(200).send({ ok: true });
+      }
       
-      return reply.code(200).send({ 
-        ok: true, 
-        action: "execute", 
-        ticker: payload.ticker,
-        buyPrice: payload.buyPrice,
-        qty 
-      });
-    } 
+      if (command === "/hero") {
+        const mitState = await mitStore.read();
+        const latest = [...mitState.dailyRuns].sort((a, b) => b.date.localeCompare(a.date))[0];
+        
+        if (!latest) {
+          await telegramService.sendMessage("No analysis available. Run pipeline first.");
+          return reply.code(200).send({ ok: true });
+        }
+        
+        const validCandidates = latest.ideas.filter(idea => !idea.isAvoid && idea.entryExitPlan);
+        if (validCandidates.length === 0) {
+          await telegramService.sendMessage("No valid candidates available.");
+          return reply.code(200).send({ ok: true });
+        }
+        
+        const heroAnalysis = await mitStore.transaction(async (draft) => {
+          const { HeroAnalyst } = await import("./services/mit/hero-analyst.js");
+          const { MarketDataService } = await import("./services/mit/market-data.js");
+          
+          const analyst = new HeroAnalyst();
+          analyst.setMarketDataService(new MarketDataService());
+          
+          return await analyst.analyzeCandidates(validCandidates);
+        });
+        
+        if (!heroAnalysis?.heroPick) {
+          await telegramService.sendMessage("Could not determine hero pick.");
+          return reply.code(200).send({ ok: true });
+        }
+        
+        const hero = heroAnalysis.heroPick;
+        const plan = hero.candidate.entryExitPlan;
+        
+        const heroBrief = `🏆 HERO PICK: ${hero.symbol}
+Score: ${hero.totalScore}/100
+
+Why: ${hero.narrative}
+
+Trade Details:
+Buy @ ${plan.buyZoneHigh.toFixed(0)} | Stop @ ${plan.stopLoss.toFixed(0)} | Target @ ${plan.firstTarget.toFixed(0)}`;
+        
+        const payload: HeroAlertPayload = {
+          ticker: hero.symbol,
+          action: "execute",
+          buyPrice: plan.buyZoneHigh,
+          stopLoss: plan.stopLoss,
+          target: plan.firstTarget,
+          score: hero.totalScore,
+        };
+        
+        await telegramService.sendHeroAlertWithButtons(heroBrief, payload);
+        return reply.code(200).send({ ok: true });
+      }
+      
+      if (command === "/surveillance" || command === "/status") {
+        const mitState = await mitStore.read();
+        
+        const { MarketDataService } = await import("./services/mit/market-data.js");
+        const marketDataService = new MarketDataService();
+        
+        await mitStore.transaction(async (draft) => {
+          const latest: Record<string, number> = {};
+          for (const pos of draft.portfolio.positions) {
+            const candles = await marketDataService.fetchCandles(pos.ticker, 2).catch(() => []);
+            const close = candles[candles.length - 1]?.close;
+            if (close !== undefined) {
+              latest[pos.ticker] = close;
+            }
+          }
+          for (const pos of draft.portfolio.positions) {
+            const currentPrice = latest[pos.ticker];
+            if (currentPrice !== undefined) {
+              pos.currentPrice = currentPrice;
+              pos.unrealizedPnl = (currentPrice - pos.entryPrice) * pos.qty;
+            }
+          }
+        });
+        
+        const updatedState = await mitStore.read();
+        const status = surveillanceBot.getSurveillanceStatus(updatedState.portfolio);
+        
+        let statusMsg = `📊 *Surveillance Status*
+
+🛡️ Kill Switch: ${status.killSwitch.triggered ? "⚠️ TRIGGERED" : "✅ OK"} (${status.killSwitch.lossPct.toFixed(2)}%)
+📋 Blacklist: ${status.blacklist.length} stocks`;
+        
+        if (status.blacklist.length > 0) {
+          statusMsg += "\n\n🚫 *Blacklisted:*";
+          for (const entry of status.blacklist.slice(0, 5)) {
+            statusMsg += `\n• ${entry.ticker} - ${entry.reason}`;
+          }
+        }
+        
+        const drifting = status.positions.filter(p => p.drifting);
+        if (drifting.length > 0) {
+          statusMsg += "\n\n⚠️ *Drifting Positions:*";
+          for (const p of drifting) {
+            statusMsg += `\n• ${p.ticker}: ${p.driftPct.toFixed(2)}%`;
+          }
+        }
+        
+        statusMsg += "\n\n💡 Say /hero for current pick";
+        
+        await telegramService.sendMessage(statusMsg);
+        return reply.code(200).send({ ok: true });
+      }
+      
+      if (command === "/help") {
+        const helpText = `📖 *Available Commands*
+
+/hero - Get current hero pick
+/why - Why was this stock selected
+/status - Portfolio surveillance status
+/help - Show this message`;
+        
+        await telegramService.sendMessage(helpText);
+        return reply.code(200).send({ ok: true });
+      }
+    }
     
-    if (action === "hero_pass") {
-      await telegramService.answerCallbackQuery(callbackQuery.id, `Trade passed for ${payload.ticker}`);
-      await telegramService.notifyHeroRejected(payload.ticker);
-      
-      return reply.code(200).send({ 
-        ok: true, 
-        action: "pass", 
-        ticker: payload.ticker 
-      });
-    }
-
-    await telegramService.answerCallbackQuery(callbackQuery.id, "Unknown action");
     return reply.code(200).send({ ok: true });
   });
 

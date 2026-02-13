@@ -12,7 +12,7 @@ const ruleSchema = z.object({
   cooldownMinutes: z.number().int().min(1).max(240),
   escalationMinutes: z.number().int().min(1).max(1_440),
   suppressionWindowMinutes: z.number().int().min(0).max(1_440),
-  channels: z.array(z.enum(["terminal", "email", "webhook"])).min(1).max(3),
+  channels: z.array(z.enum(["terminal", "email", "webhook", "telegram"])).min(1).max(3),
   ownerUserId: z.string().min(1).max(64),
 });
 
