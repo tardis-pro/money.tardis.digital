@@ -49,6 +49,7 @@ import { registerMitRoutes } from "./mit-routes.js";
 import { TelegramNotificationService, type HeroAlertPayload } from "./services/telegram-notifier.js";
 import { SurveillanceBot, getSurveillanceBot } from "./services/mit/surveillance-bot.js";
 import { TelegramFeatureService, getTelegramFeatureService } from "./services/telegram-feature-service.js";
+import { MitTradeManager } from "./services/mit/trade-manager.js";
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -1865,12 +1866,23 @@ async function buildServer() {
   const telegramService = new TelegramNotificationService();
   const surveillanceBot = getSurveillanceBot();
   const featureService = getTelegramFeatureService();
+  const tradeManager = new MitTradeManager();
+  const telegramWebhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET ?? null;
+  const allowedTelegramChatId = process.env.TELEGRAM_CHAT_ID ?? null;
   
   app.post("/api/telegram/webhook", async (request, reply) => {
     const body = request.body as { 
       callback_query?: { id: string; data?: string; message?: { chat?: { id: number } } };
       message?: { text?: string; chat?: { id: number } };
     };
+
+    if (telegramWebhookSecret) {
+      const header = request.headers["x-telegram-bot-api-secret-token"];
+      const provided = typeof header === "string" ? header : Array.isArray(header) ? header[0] : undefined;
+      if (!provided || provided !== telegramWebhookSecret) {
+        return reply.code(403).send({ error: "Invalid webhook secret" });
+      }
+    }
     
     // Handle callback queries (button clicks)
     const callbackQuery = body.callback_query;
@@ -1881,26 +1893,52 @@ async function buildServer() {
         return reply.code(200).send({ ok: true });
       }
 
-      const [action, payloadStr] = callbackData.split(":");
-      if (!action || !payloadStr) {
+      const separator = callbackData.indexOf(":");
+      const action = separator >= 0 ? callbackData.slice(0, separator) : "";
+      const callbackToken = separator >= 0 ? callbackData.slice(separator + 1) : "";
+      if (!action || !callbackToken) {
         await telegramService.answerCallbackQuery(callbackQuery.id, "Invalid format");
         return reply.code(200).send({ ok: true });
       }
 
-      let payload: HeroAlertPayload;
-      try {
-        payload = JSON.parse(payloadStr);
-      } catch {
+      const payload = telegramService.getHeroPayloadFromToken(callbackToken);
+      if (!payload) {
         await telegramService.answerCallbackQuery(callbackQuery.id, "Invalid payload");
         return reply.code(200).send({ ok: true });
       }
 
+      const callbackChatId = callbackQuery.message?.chat?.id;
+      if (allowedTelegramChatId && callbackChatId !== undefined && String(callbackChatId) !== allowedTelegramChatId) {
+        await telegramService.answerCallbackQuery(callbackQuery.id, "Unauthorized chat");
+        return reply.code(200).send({ ok: true });
+      }
+
       if (action === "hero_execute") {
+        if (!(payload.buyPrice > payload.stopLoss)) {
+          await telegramService.answerCallbackQuery(callbackQuery.id, "Invalid risk setup");
+          return reply.code(200).send({ ok: true });
+        }
+
         await telegramService.answerCallbackQuery(callbackQuery.id, `Executing ${payload.ticker}...`);
-        
+
         const riskAmount = payload.buyPrice - payload.stopLoss;
-        const qty = Math.floor(10000 / riskAmount);
-        
+        const qty = Math.max(1, Math.floor(10000 / riskAmount));
+
+        const entered = await mitStore.transaction((draft) => tradeManager.enter(draft, {
+          ticker: payload.ticker,
+          feed: "nt-lite",
+          entryPrice: payload.buyPrice,
+          qty,
+          stopLoss: payload.stopLoss,
+          firstTarget: payload.target,
+          notes: "telegram-hero-execute",
+        }));
+
+        if (!entered.ok) {
+          await telegramService.answerCallbackQuery(callbackQuery.id, entered.reason ?? "Execution failed");
+          return reply.code(200).send({ ok: true, action: "execute", success: false, reason: entered.reason });
+        }
+
         await telegramService.notifyHeroExecuted(payload.ticker, payload.buyPrice, qty);
         
         return reply.code(200).send({ 
@@ -1936,6 +1974,10 @@ async function buildServer() {
       if (!chatId) {
         return reply.code(200).send({ ok: true });
       }
+
+      if (allowedTelegramChatId && String(chatId) !== allowedTelegramChatId) {
+        return reply.code(200).send({ ok: true });
+      }
       
       if (command === "/why") {
         const mitState = await mitStore.read();
@@ -1952,7 +1994,7 @@ async function buildServer() {
           return reply.code(200).send({ ok: true });
         }
         
-        const heroAnalysis = await mitStore.transaction(async (draft) => {
+        const heroAnalysis = await (async () => {
           const { HeroAnalyst } = await import("./services/mit/hero-analyst.js");
           const { MarketDataService } = await import("./services/mit/market-data.js");
           
@@ -1960,7 +2002,7 @@ async function buildServer() {
           analyst.setMarketDataService(new MarketDataService());
           
           return await analyst.analyzeCandidates(validCandidates);
-        });
+        })();
         
         if (!heroAnalysis?.heroPick) {
           await telegramService.sendMessage("Could not determine hero pick.");
@@ -1991,7 +2033,7 @@ async function buildServer() {
           return reply.code(200).send({ ok: true });
         }
         
-        const heroAnalysis = await mitStore.transaction(async (draft) => {
+        const heroAnalysis = await (async () => {
           const { HeroAnalyst } = await import("./services/mit/hero-analyst.js");
           const { MarketDataService } = await import("./services/mit/market-data.js");
           
@@ -1999,7 +2041,7 @@ async function buildServer() {
           analyst.setMarketDataService(new MarketDataService());
           
           return await analyst.analyzeCandidates(validCandidates);
-        });
+        })();
         
         if (!heroAnalysis?.heroPick) {
           await telegramService.sendMessage("Could not determine hero pick.");
@@ -2105,14 +2147,14 @@ Buy @ ${plan.buyZoneHigh.toFixed(0)} | Stop @ ${plan.stopLoss.toFixed(0)} | Targ
           return reply.code(200).send({ ok: true });
         }
         
-        const heroAnalysis = await mitStore.transaction(async (draft) => {
+        const heroAnalysis = await (async () => {
           const { HeroAnalyst } = await import("./services/mit/hero-analyst.js");
           const { MarketDataService } = await import("./services/mit/market-data.js");
           
           const analyst = new HeroAnalyst();
           analyst.setMarketDataService(new MarketDataService());
           return await analyst.analyzeCandidates(validCandidates);
-        });
+        })();
         
         if (!heroAnalysis?.allCandidates?.length) {
           await telegramService.sendMessage("Could not analyze candidates.");
@@ -2167,13 +2209,13 @@ Buy @ ${plan.buyZoneHigh.toFixed(0)} | Stop @ ${plan.stopLoss.toFixed(0)} | Targ
         const chart1Url = featureService.generatePriceChartUrl(ticker1, candles1);
         
         const validCandidates = latest.ideas.filter(idea => !idea.isAvoid && idea.entryExitPlan);
-        const heroAnalysis = await mitStore.transaction(async (draft) => {
+        const heroAnalysis = await (async () => {
           const { HeroAnalyst } = await import("./services/mit/hero-analyst.js");
           const { MarketDataService } = await import("./services/mit/market-data.js");
           const analyst = new HeroAnalyst();
           analyst.setMarketDataService(new MarketDataService());
           return await analyst.analyzeCandidates(validCandidates);
-        });
+        })();
         
         const extended = heroAnalysis ? featureService.getExtendedCandidates(heroAnalysis.allCandidates, heroAnalysis.allCandidates.length) : [];
         const chart2Url = featureService.generateScoreBreakdownChartUrl(extended);
@@ -2199,13 +2241,13 @@ Stocks: ${ticker1} vs ${ticker2}
         }
         
         const validCandidates = latest.ideas.filter(idea => !idea.isAvoid && idea.entryExitPlan);
-        const heroAnalysis = await mitStore.transaction(async (draft) => {
+        const heroAnalysis = await (async () => {
           const { HeroAnalyst } = await import("./services/mit/hero-analyst.js");
           const { MarketDataService } = await import("./services/mit/market-data.js");
           const analyst = new HeroAnalyst();
           analyst.setMarketDataService(new MarketDataService());
           return await analyst.analyzeCandidates(validCandidates);
-        });
+        })();
         
         if (!heroAnalysis?.allCandidates?.length) {
           await telegramService.sendMessage("No candidates to export.");
@@ -2227,13 +2269,13 @@ Stocks: ${ticker1} vs ${ticker2}
         }
         
         const validCandidates = latest.ideas.filter(idea => !idea.isAvoid && idea.entryExitPlan);
-        const heroAnalysis = await mitStore.transaction(async (draft) => {
+        const heroAnalysis = await (async () => {
           const { HeroAnalyst } = await import("./services/mit/hero-analyst.js");
           const { MarketDataService } = await import("./services/mit/market-data.js");
           const analyst = new HeroAnalyst();
           analyst.setMarketDataService(new MarketDataService());
           return await analyst.analyzeCandidates(validCandidates);
-        });
+        })();
         
         if (!heroAnalysis?.allCandidates?.length) {
           await telegramService.sendMessage("No candidates available.");

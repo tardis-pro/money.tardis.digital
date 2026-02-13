@@ -25,14 +25,15 @@ export class MarketDataService {
   }
 
   async fetchCandles(ticker: string, days: number = 300): Promise<DailyCandle[]> {
-    const cached = await this.readCache(ticker);
+    const normalizedTicker = sanitizeTicker(ticker);
+    const cached = await this.readCache(normalizedTicker);
     if (cached.length >= days) {
       return cached.slice(-days);
     }
 
-    const fresh = await this.fetchFromNse(ticker, days).catch(async () => this.fetchFromYahoo(ticker, days));
+    const fresh = await this.fetchFromNse(normalizedTicker, days).catch(async () => this.fetchFromYahoo(normalizedTicker, days));
     const merged = mergeCandles(cached, fresh).slice(-days);
-    await this.writeCache(ticker, merged);
+    await this.writeCache(normalizedTicker, merged);
     return merged;
   }
 
@@ -126,7 +127,7 @@ export class MarketDataService {
   }
 
   private async readCache(ticker: string): Promise<DailyCandle[]> {
-    const file = path.join(this.candlesDir, `${ticker.toUpperCase()}.json`);
+    const file = path.join(this.candlesDir, `${sanitizeTicker(ticker)}.json`);
     try {
       const content = await readFile(file, "utf8");
       const parsed = JSON.parse(content) as DailyCandle[];
@@ -138,9 +139,17 @@ export class MarketDataService {
 
   private async writeCache(ticker: string, candles: DailyCandle[]): Promise<void> {
     await ensureDir(this.candlesDir);
-    const file = path.join(this.candlesDir, `${ticker.toUpperCase()}.json`);
+    const file = path.join(this.candlesDir, `${sanitizeTicker(ticker)}.json`);
     await writeFile(file, `${JSON.stringify(candles.slice(-300), null, 2)}\n`, "utf8");
   }
+}
+
+function sanitizeTicker(ticker: string): string {
+  const value = ticker.trim().toUpperCase();
+  if (!/^[A-Z0-9._^\-]{1,30}$/.test(value)) {
+    throw new Error(`Invalid ticker: ${ticker}`);
+  }
+  return value;
 }
 
 function mergeCandles(existing: DailyCandle[], incoming: DailyCandle[]): DailyCandle[] {

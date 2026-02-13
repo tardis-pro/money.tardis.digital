@@ -47,6 +47,7 @@ export interface LoadResult<T> {
 export abstract class BaseConfigurationLoader<T> {
   protected cache: Map<string, CacheEntry<T>> = new Map();
   protected sources: ConfigurationSource<T>[] = [];
+  private unavailableLogAt: Map<string, number> = new Map();
   
   constructor(
     protected readonly name: string,
@@ -73,9 +74,13 @@ export abstract class BaseConfigurationLoader<T> {
         // Check if source is available
         const isAvailable = await this.isSourceAvailableWithTimeout(source);
         if (!isAvailable) {
-          console.log(`[${this.name}] Source ${source.name} is not available, skipping`);
+          if (this.shouldLogUnavailable(source.id)) {
+            console.log(`[${this.name}] Source ${source.name} is not available, skipping`);
+          }
           continue;
         }
+
+        this.unavailableLogAt.delete(source.id);
 
         // Check cache first
         const cached = this.cache.get(source.id);
@@ -161,6 +166,19 @@ export abstract class BaseConfigurationLoader<T> {
         setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs)
       )
     ]);
+  }
+
+  private shouldLogUnavailable(sourceId: string): boolean {
+    if (process.env.NODE_ENV === 'test') {
+      return false;
+    }
+    const now = Date.now();
+    const last = this.unavailableLogAt.get(sourceId);
+    if (last !== undefined && now - last < 10 * 60 * 1000) {
+      return false;
+    }
+    this.unavailableLogAt.set(sourceId, now);
+    return true;
   }
 
   /**

@@ -57,6 +57,7 @@ export class MitJsonStore implements MitStore {
   private readonly dataDir: string;
   private readonly stateFile: string;
   private readonly candlesDir: string;
+  private transactionQueue: Promise<void> = Promise.resolve();
 
   constructor(baseDir: string = process.cwd()) {
     this.dataDir = path.join(baseDir, "data");
@@ -134,10 +135,22 @@ export class MitJsonStore implements MitStore {
   }
 
   async transaction<T>(fn: (state: MitState) => T): Promise<T> {
-    const state = await this.read();
-    const result = await fn(state);
-    await this.write(state);
-    return result;
+    let release: () => void = () => {};
+    const previous = this.transactionQueue;
+    this.transactionQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+
+    try {
+      const state = await this.read();
+      const draft = structuredClone(state);
+      const result = await fn(draft);
+      await this.write(draft);
+      return result;
+    } finally {
+      release();
+    }
   }
 }
 

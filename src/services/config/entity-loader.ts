@@ -73,7 +73,11 @@ class ScreenerEntitySource implements ConfigurationSource<Map<string, EntityMeta
   async isAvailable(): Promise<boolean> {
     try {
       const response = await fetch(`${this.baseUrl}/HAL/`, {
-        method: 'HEAD',
+        method: 'GET',
+        headers: {
+          'user-agent': 'Mozilla/5.0',
+          accept: 'application/json,text/plain,*/*'
+        },
         signal: AbortSignal.timeout(5000)
       });
       return response.ok;

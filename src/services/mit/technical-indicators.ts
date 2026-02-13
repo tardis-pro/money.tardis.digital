@@ -30,7 +30,7 @@ export function computeTechnicalSnapshot(ticker: string, candles: DailyCandle[])
 }
 
 export function ema(candles: DailyCandle[], period: number): number | null {
-  if (candles.length < period) {
+  if (period <= 0 || candles.length < period) {
     return null;
   }
   const alpha = 2.0 / (period + 1);
@@ -72,7 +72,7 @@ export function macd(closes: number[], fastPeriod: number = 12, slowPeriod: numb
 }
 
 function emaFromArray(values: number[], period: number): number | null {
-  if (values.length < period) return null;
+  if (period <= 0 || values.length < period) return null;
   const alpha = 2.0 / (period + 1);
   let emaVal: number = values[values.length - period] ?? 0;
   for (let i = values.length - period + 1; i < values.length; i += 1) {
@@ -84,7 +84,7 @@ function emaFromArray(values: number[], period: number): number | null {
 }
 
 export function cci(highs: number[], lows: number[], closes: number[], period: number = 20): number | null {
-  if (highs.length < period || lows.length < period || closes.length < period) {
+  if (period <= 0 || highs.length < period || lows.length < period || closes.length < period) {
     return null;
   }
   const typicalPrices: number[] = [];
@@ -135,7 +135,11 @@ export function detectPattern(candles: DailyCandle[]): string {
   }
   
   // Breakout detection
-  const prev20High = Math.max(...candles.slice(-21, -1).map(c => c.high));
+  const lookback = candles.slice(-21, -1);
+  if (lookback.length === 0) {
+    return "None";
+  }
+  const prev20High = Math.max(...lookback.map(c => c.high));
   if (latest.close > prev20High) {
     return "Breakout";
   }
@@ -144,7 +148,7 @@ export function detectPattern(candles: DailyCandle[]): string {
 }
 
 export function sma(candles: DailyCandle[], period: number): number | null {
-  if (candles.length < period) {
+  if (period <= 0 || candles.length < period) {
     return null;
   }
   const slice = candles.slice(-period);
@@ -152,7 +156,7 @@ export function sma(candles: DailyCandle[], period: number): number | null {
 }
 
 export function rsi(candles: DailyCandle[], period: number): number | null {
-  if (candles.length < period + 1) {
+  if (period <= 0 || candles.length < period + 1) {
     return null;
   }
   let gains = 0;
@@ -191,7 +195,7 @@ export function rsi(candles: DailyCandle[], period: number): number | null {
 }
 
 export function atr(candles: DailyCandle[], period: number): number | null {
-  if (candles.length < period + 1) {
+  if (period <= 0 || candles.length < period + 1) {
     return null;
   }
   const trs: number[] = [];
@@ -220,7 +224,7 @@ export function atr(candles: DailyCandle[], period: number): number | null {
 }
 
 export function returnZScore(candles: DailyCandle[], returnWindow: number, distributionWindow: number): number | null {
-  if (candles.length < distributionWindow + 1 || candles.length < returnWindow + 1) {
+  if (returnWindow <= 0 || distributionWindow <= 0 || candles.length < distributionWindow + 1 || candles.length < returnWindow + 1) {
     return null;
   }
   const returns: number[] = [];
@@ -238,7 +242,7 @@ export function returnZScore(candles: DailyCandle[], returnWindow: number, distr
   }
   const mean = returns.reduce((sum, v) => sum + v, 0) / returns.length;
   const variance = returns.reduce((sum, v) => sum + (v - mean) * (v - mean), 0) / returns.length;
-  const stdev = Math.sqrt(variance);
+  const stdev = Math.sqrt(Math.max(0, variance));
   if (stdev === 0) {
     return null;
   }
@@ -325,6 +329,10 @@ export function beta(stockReturns: number[], benchmarkReturns: number[]): number
  */
 export function rSquared(prices: number[]): number | null {
   if (prices.length < 10) {
+    return null;
+  }
+
+  if (prices.some((p) => !Number.isFinite(p) || p <= 0)) {
     return null;
   }
   

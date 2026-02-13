@@ -20,7 +20,10 @@ export function checkGuard(portfolio: MitPortfolioState): GuardStatus {
 
   const suggestedSells = portfolio.positions
     .filter((p) => p.status === "open")
-    .map((p) => ({ ticker: p.ticker, pctToTarget: (p.firstTarget - p.currentPrice) / p.firstTarget }))
+    .map((p) => ({
+      ticker: p.ticker,
+      pctToTarget: p.firstTarget > 0 ? (p.firstTarget - p.currentPrice) / p.firstTarget : 0,
+    }))
     .filter((p) => p.pctToTarget < 0.1)
     .sort((a, b) => a.pctToTarget - b.pctToTarget)
     .map((p) => p.ticker);

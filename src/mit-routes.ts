@@ -71,7 +71,7 @@ const manualFundamentalSchema = z.object({
 });
 
 const tradeEnterSchema = z.object({
-  ticker: z.string().min(1),
+  ticker: z.string().regex(/^[A-Z0-9._-]{1,20}$/i),
   feed: z.enum(["nt-lite", "quant"]),
   entryPrice: z.number().positive(),
   qty: z.number().int().positive().optional(),
@@ -80,6 +80,9 @@ const tradeEnterSchema = z.object({
   notes: z.string().optional(),
   entryDate: z.string().optional(),
   customAllocPct: z.number().positive().max(1).optional(),
+}).refine((data) => data.stopLoss < data.entryPrice && data.entryPrice < data.firstTarget, {
+  message: "Expected stopLoss < entryPrice < firstTarget",
+  path: ["entryPrice"],
 });
 
 const tradeExitSchema = z.object({
@@ -163,7 +166,17 @@ const flexibleQuerySchema = z.object({
 });
 
 const tickerParamSchema = z.object({
-  ticker: z.string().min(1),
+  ticker: z.string().regex(/^[A-Z0-9._-]{1,20}$/i),
+});
+
+const screenipyCandidatesQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(100).default(20),
+  feed: z.enum(["all", "nt-lite", "quant"]).default("all"),
+});
+
+const stopOverrideSchema = z.object({
+  positionId: z.string().min(1),
+  newStop: z.number().finite().positive(),
 });
 
 const chartQuerySchema = z.object({
@@ -257,19 +270,24 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   });
 
   app.get("/api/mit/screenipy/latest", async () => {
-    if (!screenipyCache) {
+    if (!screenipyCache || Date.now() - Date.parse(screenipyCache.fetchedAt) > SCREENIPY_CACHE_TTL_MS) {
+      screenipyCache = null;
       return { error: "No cached scan. Run /api/mit/screenipy/run first." };
     }
     return screenipyCache;
   });
 
-  app.get("/api/mit/screenipy/candidates", async (request) => {
-    const query = request.query as { limit?: string; feed?: string };
-    if (!screenipyCache) {
+  app.get("/api/mit/screenipy/candidates", async (request, reply) => {
+    const parsed = screenipyCandidatesQuerySchema.safeParse(request.query ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    if (!screenipyCache || Date.now() - Date.parse(screenipyCache.fetchedAt) > SCREENIPY_CACHE_TTL_MS) {
+      screenipyCache = null;
       return { error: "No cached scan" };
     }
-    const limit = parseInt(query.limit ?? "20", 10);
-    const feed = query.feed ?? "all";
+    const limit = parsed.data.limit;
+    const feed = parsed.data.feed;
     
     let filtered = screenipyCache.rows;
     if (feed === "nt-lite") {
@@ -1037,13 +1055,18 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   });
 
   app.post("/api/mit/stop/override", async (request, reply) => {
-    const body = request.body as { positionId?: string; newStop?: number };
-    if (!body.positionId || typeof body.newStop !== "number") {
-      return reply.code(400).send({ error: "positionId and newStop required" });
+    const parsed = stopOverrideSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
     }
-    return deps.mitStore.transaction((draft) => {
-      return portfolioService.overrideStop(draft, body.positionId!, body.newStop!);
+    const body = parsed.data;
+    const result = await deps.mitStore.transaction((draft) => {
+      return portfolioService.overrideStop(draft, body.positionId, body.newStop);
     });
+    if (!result.ok) {
+      return reply.code(400).send(result);
+    }
+    return result;
   });
 
   app.get("/api/mit/export/watchlist.csv", async (_request, reply) => {
@@ -1517,7 +1540,7 @@ function compactEnter(input: {
     ticker: string;
     feed: "nt-lite" | "quant";
     entryPrice: number;
-    qty: number;
+    qty?: number;
     stopLoss: number;
     firstTarget: number;
     notes?: string;
@@ -1527,10 +1550,10 @@ function compactEnter(input: {
     ticker: input.ticker,
     feed: input.feed,
     entryPrice: input.entryPrice,
-    qty: input.qty ?? 0,
     stopLoss: input.stopLoss,
     firstTarget: input.firstTarget,
   };
+  if (input.qty !== undefined) out.qty = input.qty;
   if (input.notes !== undefined) out.notes = input.notes;
   if (input.entryDate !== undefined) out.entryDate = input.entryDate;
   if (input.customAllocPct !== undefined) out.customAllocPct = input.customAllocPct;

@@ -171,7 +171,7 @@ Please verify with your broker.`;
     const deployed = portfolio.positions.reduce((sum, p) => sum + (p.qty * p.entryPrice), 0);
     const currentValue = portfolio.positions.reduce((sum, p) => sum + (p.qty * p.currentPrice), 0);
     const pnl = currentValue - deployed;
-    const pnlPct = (pnl / deployed) * 100;
+    const pnlPct = deployed > 0 ? (pnl / deployed) * 100 : 0;
 
     return `🛑 *KILL SWITCH TRIGGERED*
 

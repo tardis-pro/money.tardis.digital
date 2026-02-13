@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export function sha256(input: string): string {
@@ -26,14 +26,20 @@ export async function readJsonFile<T>(filePath: string, fallback: T): Promise<T>
   try {
     const content = await readFile(filePath, "utf8");
     return JSON.parse(content) as T;
-  } catch {
-    return fallback;
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === "ENOENT") {
+      return fallback;
+    }
+    throw error;
   }
 }
 
 export async function writeJsonFile<T>(filePath: string, value: T): Promise<void> {
   await ensureDir(path.dirname(filePath));
-  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  const tempPath = `${filePath}.${crypto.randomUUID()}.tmp`;
+  await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await rename(tempPath, filePath);
 }
 
 export function normalizeWhitespace(value: string): string {

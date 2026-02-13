@@ -1,12 +1,14 @@
 import type {
   MitPortfolioState,
   MitPortfolioResponse,
+  MitPosition,
   MitSettings,
   MitState,
   TradeConfirmRequest,
   TradeEnterRequest,
   TradeExitRequest,
 } from "../../mit-types.js";
+import { makeId } from "../../utils.js";
 import { sizePosition } from "./position-sizer.js";
 
 export function makeDefaultPortfolioState(): MitPortfolioState {
@@ -43,14 +45,21 @@ export class MitPortfolioService {
 
   enterTrade(state: MitState, input: TradeEnterRequest): { ok: boolean; reason?: string } {
     const portfolio = state.portfolio;
-    const sizing = sizePosition(portfolio.settings, portfolio, input.entryPrice, input.stopLoss, input.customAllocPct);
+    const sizing = sizePosition(
+      portfolio.settings,
+      portfolio,
+      input.entryPrice,
+      input.stopLoss,
+      input.customAllocPct,
+      input.qty,
+    );
     if (!sizing.approved) {
       return { ok: false, reason: sizing.rejectionReason ?? "Rejected" };
     }
     const now = new Date().toISOString();
     const cost = sizing.units * input.entryPrice;
-    portfolio.positions.push({
-      id: `mit-pos-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    const position: MitPosition = {
+      id: makeId("mit-pos"),
       ticker: input.ticker.toUpperCase(),
       feed: input.feed,
       entryPrice: input.entryPrice,
@@ -75,7 +84,9 @@ export class MitPortfolioService {
       notes: input.notes ?? "",
       createdAt: now,
       updatedAt: now,
-    });
+    };
+
+    portfolio.positions.push(position);
     portfolio.cash = round2(portfolio.cash - cost);
     return { ok: true };
   }
@@ -85,6 +96,16 @@ export class MitPortfolioService {
     if (!pos) {
       return { ok: false, reason: "Position not found" };
     }
+    const previousCost = pos.entryPrice * pos.qty;
+    const newCost = input.entryPrice * pos.qty;
+    const delta = newCost - previousCost;
+
+    if (state.portfolio.cash - delta < 0) {
+      return { ok: false, reason: "Insufficient cash to confirm entry" };
+    }
+
+    state.portfolio.cash = round2(state.portfolio.cash - delta);
+    pos.allocatedAmount = round2(newCost);
     pos.entryPrice = input.entryPrice;
     pos.entryDate = input.entryDate ?? pos.entryDate;
     pos.confirmedEntry = true;
@@ -98,7 +119,7 @@ export class MitPortfolioService {
     if (!pos) {
       return { ok: false, reason: "Position not found" };
     }
-    if (input.qty <= 0 || input.qty > pos.qty) {
+    if (pos.qty <= 0 || input.qty <= 0 || input.qty > pos.qty) {
       return { ok: false, reason: "Invalid quantity" };
     }
     const now = new Date().toISOString();
@@ -110,7 +131,7 @@ export class MitPortfolioService {
     const realizedRMultiple = initialRisk > 0 ? (input.exitPrice - pos.entryPrice) / initialRisk : 0;
 
     portfolio.closedTrades.push({
-      id: `mit-trade-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: makeId("mit-trade"),
       positionId: pos.id,
       ticker: pos.ticker,
       feed: pos.feed,
@@ -144,6 +165,9 @@ export class MitPortfolioService {
     if (!pos) {
       return { ok: false, reason: "Position not found" };
     }
+    if (!Number.isFinite(newStop) || newStop <= 0) {
+      return { ok: false, reason: "Stop must be positive" };
+    }
     if (newStop >= pos.currentPrice) {
       return { ok: false, reason: "Stop must be below current price" };
     }
@@ -171,7 +195,7 @@ export class MitPortfolioService {
       cash: portfolio.cash,
       equity,
       deployed,
-      deployedPct: portfolio.settings.capital > 0 ? deployed / portfolio.settings.capital : 0,
+      deployedPct: equity > 0 ? deployed / equity : 0,
       unrealizedPnl,
       realizedPnlCumulative,
       maxDrawdownPct: portfolio.maxDrawdownPct,
@@ -193,6 +217,7 @@ function holdDays(entryDate: string, exitDate: string): number {
   const start = Date.parse(entryDate);
   const end = Date.parse(exitDate);
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+    console.warn("MIT holdDays received invalid dates", { entryDate, exitDate });
     return 0;
   }
   return Math.floor((end - start) / (24 * 60 * 60 * 1000));

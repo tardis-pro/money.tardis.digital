@@ -413,7 +413,7 @@ export interface TradeEnterRequest {
   ticker: string;
   feed: MitFeed;
   entryPrice: number;
-  qty: number;
+  qty?: number;
   stopLoss: number;
   firstTarget: number;
   notes?: string;

@@ -18,6 +18,7 @@ export class TelegramNotificationService {
   private botToken: string | null = null;
   private chatId: string | null = null;
   private webhookPath: string = "/api/telegram/webhook";
+  private readonly callbackPayloadByToken = new Map<string, { payload: HeroAlertPayload; expiresAt: number }>();
 
   constructor(config?: TelegramConfig) {
     this.botToken = config?.botToken ?? process.env.TELEGRAM_BOT_TOKEN ?? null;
@@ -28,7 +29,7 @@ export class TelegramNotificationService {
     return this.botToken !== null && this.chatId !== null;
   }
 
-  async sendMessage(text: string, parseMode: "MarkdownV2" | "HTML" = "MarkdownV2"): Promise<{ ok: boolean; messageId?: number; error?: string }> {
+  async sendMessage(text: string, parseMode?: "MarkdownV2" | "HTML"): Promise<{ ok: boolean; messageId?: number; error?: string }> {
     if (!this.isConfigured()) {
       return { ok: false, error: "Telegram bot not configured" };
     }
@@ -42,7 +43,7 @@ export class TelegramNotificationService {
         body: JSON.stringify({
           chat_id: this.chatId,
           text,
-          parse_mode: parseMode,
+          ...(parseMode ? { parse_mode: parseMode } : {}),
           disable_web_page_preview: true,
         }),
       });
@@ -68,9 +69,9 @@ export class TelegramNotificationService {
       return { ok: false, error: "Telegram bot not configured" };
     }
 
-    const payloadStr = JSON.stringify(payload).replace(/"/g, '\\"');
-    const callbackDataExecute = `hero_execute:${payloadStr}`;
-    const callbackDataPass = `hero_pass:${payloadStr}`;
+    const callbackToken = this.createCallbackToken(payload);
+    const callbackDataExecute = `hero_execute:${callbackToken}`;
+    const callbackDataPass = `hero_pass:${callbackToken}`;
 
     const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
     
@@ -80,8 +81,7 @@ export class TelegramNotificationService {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: this.chatId,
-          text: "🎯 *QVM-Hybrid Alert*\n\n" + heroBrief,
-          parse_mode: "MarkdownV2",
+          text: `🎯 QVM-Hybrid Alert\n\n${heroBrief}`,
           reply_markup: {
             inline_keyboard: [
               [
@@ -106,6 +106,27 @@ export class TelegramNotificationService {
       const errMsg = err instanceof Error ? err.message : "Network error";
       return { ok: false, error: errMsg };
     }
+  }
+
+  getHeroPayloadFromToken(token: string): HeroAlertPayload | null {
+    const hit = this.callbackPayloadByToken.get(token);
+    if (!hit) {
+      return null;
+    }
+    if (Date.now() > hit.expiresAt) {
+      this.callbackPayloadByToken.delete(token);
+      return null;
+    }
+    return hit.payload;
+  }
+
+  private createCallbackToken(payload: HeroAlertPayload): string {
+    const token = makeId("hero").replace("hero_", "h").slice(0, 24);
+    this.callbackPayloadByToken.set(token, {
+      payload,
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+    });
+    return token;
   }
 
   async answerCallbackQuery(callbackQueryId: string, text?: string): Promise<{ ok: boolean; error?: string }> {

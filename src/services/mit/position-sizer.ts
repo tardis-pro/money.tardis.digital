@@ -6,10 +6,13 @@ export function sizePosition(
   entryPrice: number,
   stopLoss: number,
   customAllocPct?: number,
+  requestedQty?: number,
 ): SizingResult {
-  const allocPct = customAllocPct ?? settings.allocPct;
+  const allocPctRaw = customAllocPct ?? settings.allocPct;
+  const allocPct = Number.isFinite(allocPctRaw) ? Math.min(1, Math.max(0.01, allocPctRaw)) : settings.allocPct;
   const allocatedAmount = settings.capital * allocPct;
-  const units = Math.floor(allocatedAmount / entryPrice);
+  const fromAllocation = Math.floor(allocatedAmount / entryPrice);
+  const units = requestedQty !== undefined ? Math.max(0, Math.floor(requestedQty)) : fromAllocation;
   const cost = units * entryPrice;
   const deployed = portfolio.positions.reduce((sum, p) => sum + p.qty * p.currentPrice, 0);
 

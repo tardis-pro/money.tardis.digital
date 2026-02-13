@@ -15,6 +15,8 @@ import { ensureDir } from "./utils.js";
 const SCHEMA = "mit";
 
 export class MitPostgresStore implements MitStore {
+  private transactionQueue: Promise<void> = Promise.resolve();
+
   private readonly pool: Pool;
   private readonly candlesDir: string;
 
@@ -452,10 +454,22 @@ export class MitPostgresStore implements MitStore {
   }
 
   async transaction<T>(fn: (state: MitState) => T): Promise<T> {
-    const state = await this.read();
-    const result = await fn(state);
-    await this.write(state);
-    return result;
+    let release: () => void = () => {};
+    const previous = this.transactionQueue;
+    this.transactionQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+
+    try {
+      const state = await this.read();
+      const draft = structuredClone(state);
+      const result = await fn(draft);
+      await this.write(draft);
+      return result;
+    } finally {
+      release();
+    }
   }
 }
 

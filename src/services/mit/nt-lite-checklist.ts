@@ -47,7 +47,7 @@ export function evaluateNtLiteChecklist(
     "valuation-sane": valuation,
   };
 
-  const passCount = CHECKLIST_ITEMS.reduce((sum, key) => sum + (items[key].pass ? 1 : 0), 0);
+  const passCount = CHECKLIST_ITEMS.reduce((sum, key) => sum + (items[key]?.pass ? 1 : 0), 0);
   return {
     ticker: snapshot.ticker,
     evaluatedAt: new Date().toISOString(),
