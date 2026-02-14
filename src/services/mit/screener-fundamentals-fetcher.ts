@@ -123,7 +123,8 @@ export class ScreenerFundamentalsFetcher {
 
       const pageUrl = this.toAbsoluteCompanyUrl(this.normalizeCompanyPath(match.url));
       return this.fetchAndParseCompanyPage(ticker, pageUrl);
-    } catch {
+    } catch (e) {
+      console.warn(`Failed to find company page for ${ticker}:`, e instanceof Error ? e.message : e);
       return null;
     }
   }

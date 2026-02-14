@@ -239,6 +239,7 @@ export interface MitSettings {
 
 export interface MitEquityPoint {
   date: string;
+  timestamp: string; // ISO timestamp for distinguishing multiple points per day
   equity: number; // cash + market value of positions
   cash: number;
   deployed: number;

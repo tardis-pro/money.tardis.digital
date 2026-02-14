@@ -151,7 +151,8 @@ export abstract class BaseConfigurationLoader<T> {
         source.isAvailable(),
         new Promise<false>((resolve) => setTimeout(() => resolve(false), 5000))
       ]);
-    } catch {
+    } catch (e) {
+      console.warn(`Source availability check failed:`, e instanceof Error ? e.message : e);
       return false;
     }
   }

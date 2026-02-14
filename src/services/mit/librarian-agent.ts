@@ -62,7 +62,8 @@ export class LibrarianAgent {
           return filtered.slice(0, limit);
         }
         return fallbackNews;
-      } catch {
+      } catch (e) {
+        console.warn(`Failed to fetch news, using fallback:`, e instanceof Error ? e.message : e);
         return fallbackNews;
       }
     });
@@ -250,7 +251,8 @@ export class LibrarianAgent {
           date: new Date().toISOString(),
           summary,
         };
-      } catch {
+      } catch (e) {
+        console.warn(`Failed to fetch article content for ${url}:`, e instanceof Error ? e.message : e);
         return {
           ...output,
           summary: "Unable to fetch article content. Returned link only.",

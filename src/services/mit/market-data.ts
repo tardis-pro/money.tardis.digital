@@ -132,7 +132,8 @@ export class MarketDataService {
       const content = await readFile(file, "utf8");
       const parsed = JSON.parse(content) as DailyCandle[];
       return Array.isArray(parsed) ? parsed : [];
-    } catch {
+    } catch (e) {
+      console.warn(`Failed to read cache file ${file}:`, e instanceof Error ? e.message : e);
       return [];
     }
   }

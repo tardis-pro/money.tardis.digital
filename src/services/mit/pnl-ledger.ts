@@ -43,13 +43,17 @@ export function refreshPortfolioPnl(
 
   const point: MitEquityPoint = {
     date: new Date().toISOString().slice(0, 10),
+    timestamp: new Date().toISOString(),
     equity,
     cash: portfolio.cash,
     deployed,
     unrealizedPnl: unrealized,
     realizedPnlCumulative: realized,
   };
-  portfolio.equityCurve = [...portfolio.equityCurve.filter((p) => p.date !== point.date), point].slice(-365);
+  const allPoints = [...portfolio.equityCurve, point].sort((a, b) => 
+    new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  );
+  portfolio.equityCurve = allPoints.slice(-365);
   portfolio.paused = portfolio.cash < portfolio.settings.capital * portfolio.settings.pauseCashPct;
   return { portfolio, indicators };
 }

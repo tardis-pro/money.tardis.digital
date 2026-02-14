@@ -102,7 +102,8 @@ export class HeroAnalyst {
     if (this.marketData && technicals.latestClose) {
       try {
         candles = await this.marketData.fetchCandles(ticker, 300);
-      } catch {
+      } catch (e) {
+        console.warn(`Failed to fetch candles for ${ticker}:`, e instanceof Error ? e.message : e);
         return null;
       }
     }
@@ -165,7 +166,8 @@ export class HeroAnalyst {
         try {
           const data = await this.marketData.fetchCandles("^NSEI", 300);
           this.benchmarkCache.set("^NSEI", data);
-        } catch {
+        } catch (e) {
+          console.warn(`Failed to fetch benchmark candles:`, e instanceof Error ? e.message : e);
           return null;
         }
       }
@@ -248,7 +250,8 @@ export class HeroAnalyst {
         try {
           sectorCandles = await this.marketData.fetchCandles(indexName, 300);
           this.benchmarkCache.set(indexName, sectorCandles);
-        } catch {
+        } catch (e) {
+          console.warn(`Failed to fetch sector candles for ${indexName}:`, e instanceof Error ? e.message : e);
           return 0;
         }
       }

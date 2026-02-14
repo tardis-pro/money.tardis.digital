@@ -68,7 +68,8 @@ class LoggerService {
     try {
       await mkdir(this.logDir, { recursive: true });
       this.currentLogFile = this.getLogFilePath();
-    } catch {
+    } catch (e) {
+      console.warn(`Failed to initialize logger, disabling logging:`, e instanceof Error ? e.message : e);
       this.enabled = false;
     }
   }

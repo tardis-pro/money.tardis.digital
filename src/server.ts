@@ -67,7 +67,8 @@ async function getHtml() {
       const ssr = await import(path.join(process.cwd(), "dist/server/entry-server.js"));
       const appHtml = ssr.renderApp();
       return template.replace("<!--SSR_CONTENT-->", appHtml);
-    } catch {
+    } catch (e) {
+      console.warn(`SSR failed, serving static template:`, e instanceof Error ? e.message : e);
       return template;
     }
   }
@@ -545,7 +546,8 @@ async function buildServer() {
     try {
       const html = await readFile(path.join(process.cwd(), "dist/terminal/index.html"), "utf-8");
       return reply.type("text/html").send(html);
-    } catch {
+    } catch (e) {
+      console.warn(`Failed to serve terminal:`, e instanceof Error ? e.message : e);
       return reply.code(404).send("Terminal not found - run npm run build:terminal");
     }
   });
@@ -554,7 +556,8 @@ async function buildServer() {
     try {
       const html = await readFile(path.join(process.cwd(), "dist/terminal/index.html"), "utf-8");
       return reply.type("text/html").send(html);
-    } catch {
+    } catch (e) {
+      console.warn(`Failed to serve terminal:`, e instanceof Error ? e.message : e);
       return reply.code(404).send("Terminal not found - run npm run build:terminal");
     }
   });
