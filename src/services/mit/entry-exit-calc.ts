@@ -55,7 +55,7 @@ export function computeEntryExitPlan(input: EntryExitInput): EntryExitPlan | nul
   firstTarget = Math.max(minTarget, Math.min(maxTarget, firstTarget));
 
   const rMultiple = (firstTarget - mid) / risk;
-  const firstTargetPct = (firstTarget - mid) / mid;
+  const firstTargetPct = Number(((firstTarget - mid) / mid).toFixed(6));
   const rsiOverbought = (input.technicals.rsi14 ?? 50) > 70;
   const trailingActivationPrice = rsiOverbought 
     ? latest.close 

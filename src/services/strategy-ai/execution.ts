@@ -372,7 +372,9 @@ export class ExecutionEngine {
     if (periods.length > 0) {
       try {
         await this.taStore.computeAndSaveIndicators(ticker, periods);
-      } catch {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "unknown error";
+        console.warn(`Failed to compute indicators for ${ticker}: ${message}`);
       }
     }
 

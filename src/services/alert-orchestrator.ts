@@ -93,7 +93,8 @@ export class AlertOrchestratorService {
             let status: AlertDispatchRecord["status"] = "delivered";
             let reason = "Delivered by matching rule";
             if (recentForRule) {
-              const sinceLast = Date.now() - Date.parse(recentForRule.dispatchedAt);
+              const lastDispatchedAt = Date.parse(recentForRule.dispatchedAt);
+              const sinceLast = Number.isFinite(lastDispatchedAt) ? Date.now() - lastDispatchedAt : Number.POSITIVE_INFINITY;
               const cooldownMs = rule.cooldownMinutes * 60_000;
               if (sinceLast < cooldownMs) {
                 status = "suppressed";
@@ -101,7 +102,8 @@ export class AlertOrchestratorService {
               }
             }
             if (status === "delivered" && alert.severity === "high") {
-              const sinceAlert = Date.now() - Date.parse(alert.triggeredAt);
+              const alertTriggeredAt = Date.parse(alert.triggeredAt);
+              const sinceAlert = Number.isFinite(alertTriggeredAt) ? Date.now() - alertTriggeredAt : Number.POSITIVE_INFINITY;
               if (sinceAlert > rule.escalationMinutes * 60_000) {
                 status = "escalated";
                 reason = `Escalated after ${rule.escalationMinutes}m`;

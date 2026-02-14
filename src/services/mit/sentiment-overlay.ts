@@ -74,7 +74,9 @@ function toneFromTechnicals(technicals: Record<string, TechnicalSnapshot>): MitM
   if (entries.length === 0) {
     return "neutral";
   }
-  const below50 = entries.filter((item) => item.latestClose < (item.dma50 ?? Number.POSITIVE_INFINITY)).length / entries.length;
+  const below50 = entries.length > 0
+    ? entries.filter((item) => item.latestClose < (item.dma50 ?? Number.POSITIVE_INFINITY)).length / entries.length
+    : 0;
   if (below50 > 0.6) {
     return "risk-off";
   }

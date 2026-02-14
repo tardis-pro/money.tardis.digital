@@ -67,12 +67,12 @@ class ScreenerEntitySource implements ConfigurationSource<Map<string, EntityMeta
   priority = 0;
   cacheTtlSeconds = 43200; // 12 hours
 
-  private readonly baseUrl = 'https://www.screener.in/api/1/company';
+  private readonly searchUrl = 'https://www.screener.in/api/company/search';
   private readonly knownTickers = ['HAL', 'BEL', 'IRCTC', 'IRFC', 'NTPC', 'PFC', 'SBIN', 'HDFCBANK', 'LT', 'RVNL'];
 
   async isAvailable(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/HAL/`, {
+      const response = await fetch(`${this.searchUrl}/?q=HAL`, {
         method: 'GET',
         headers: {
           'user-agent': 'Mozilla/5.0',
@@ -80,7 +80,11 @@ class ScreenerEntitySource implements ConfigurationSource<Map<string, EntityMeta
         },
         signal: AbortSignal.timeout(5000)
       });
-      return response.ok;
+      if (!response.ok) {
+        return false;
+      }
+      const payload = await response.json();
+      return Array.isArray(payload);
     } catch {
       return false;
     }
@@ -90,22 +94,70 @@ class ScreenerEntitySource implements ConfigurationSource<Map<string, EntityMeta
     const entities = new Map<string, EntityMetadata>();
 
     for (const ticker of this.knownTickers) {
+      const fallback = FALLBACK_ENTITIES.get(ticker);
       try {
-        const response = await fetch(`${this.baseUrl}/${ticker}/`);
-        if (!response.ok) continue;
-
-        const data: ScreenerCompanyResponse = await response.json();
-        const entity = this.transformScreenerData(ticker, data);
+        const entity = await this.fetchEntityFromSearch(ticker, fallback ?? null);
         entities.set(ticker, entity);
-
-        // Rate limit to respect API
-        await this.sleep(800);
       } catch (error) {
+        if (fallback) {
+          entities.set(ticker, { ...fallback, lastUpdated: new Date().toISOString() });
+        }
         console.warn(`Failed to fetch entity ${ticker}: ${error}`);
       }
+      // Rate limit to respect API
+      await this.sleep(400);
     }
 
     return entities;
+  }
+
+  private async fetchEntityFromSearch(ticker: string, fallback: EntityMetadata | null): Promise<EntityMetadata> {
+    const response = await fetch(`${this.searchUrl}/?q=${encodeURIComponent(ticker)}`, {
+      method: 'GET',
+      headers: {
+        'user-agent': 'Mozilla/5.0',
+        accept: 'application/json,text/plain,*/*'
+      },
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (!response.ok) {
+      if (fallback) {
+        return { ...fallback, lastUpdated: new Date().toISOString() };
+      }
+      throw new Error(`Search failed with status ${response.status}`);
+    }
+
+    const results = await response.json() as Array<{ name?: string; sector?: string; url?: string }>;
+    const direct = results.find((row) => (row.url ?? '').toUpperCase().includes(`/${ticker}/`));
+    const row = direct ?? results[0] ?? null;
+    if (!row) {
+      if (fallback) {
+        return { ...fallback, lastUpdated: new Date().toISOString() };
+      }
+      throw new Error('No metadata returned from Screener search');
+    }
+
+    const companyName = row.name ?? fallback?.companyName ?? ticker;
+    const industry = row.sector ?? fallback?.industry ?? 'Unknown';
+    const governmentOwnershipPct = fallback?.governmentOwnershipPct ?? null;
+
+    const keywords = this.extractKeywords('', companyName);
+
+    return {
+      ticker,
+      companyName,
+      sector: this.mapToPolicySector(industry),
+      industry,
+      isGovernmentOwned: (governmentOwnershipPct ?? 0) > 50 || (PSU_MINISTRY_MAP[ticker]?.length ?? 0) > 0,
+      governmentOwnershipPct,
+      ministries: PSU_MINISTRY_MAP[ticker] || [],
+      subsidiaries: fallback?.subsidiaries ?? [],
+      keywords,
+      listingDate: fallback?.listingDate ?? '',
+      isin: fallback?.isin ?? '',
+      lastUpdated: new Date().toISOString(),
+    };
   }
 
   private transformScreenerData(ticker: string, data: ScreenerCompanyResponse): EntityMetadata {

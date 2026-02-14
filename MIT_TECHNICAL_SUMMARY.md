@@ -7,20 +7,192 @@
 
 ## Executive Summary
 
-The MIT (Market Intelligence Trading) System is a production-ready NSE stock trading system with comprehensive QVM (Validation, Quality, Monitoring) hardening. It features two complementary trading strategies (NT-LITE and QUANT), full TimescaleDB persistence, idempotent pipeline operations, and enterprise-grade governance controls.
+The **India Policy Signal Terminal + MIT Trading System** is a dual-system platform combining:
+1. **Policy Signal Terminal** - Real-time intelligence for tracking India policy signals
+2. **MIT Trading System** - NSE stock swing trading with QVM-Hybrid architecture
 
-The **QVM-Hybrid v3.2** update introduces the **"Manager-Supervised Swing Trading"** architecture with the **Hero Pick** system - a "Human-in-the-Loop" Decision Support System that presents only the single best trading opportunity to the user via Telegram with interactive Execute/Pass buttons.
+### Key Metrics (ACTUAL)
+| Metric | Documented | Actual |
+|--------|------------|--------|
+| API Endpoints | 42 | **181** |
+| Service Classes | 30 | **100+** |
+| MIT Services | 30 | **36** |
+| Strategy-AI Services | - | **27** |
+| Policy Signal Services | - | **30+** |
+| Database Tables | 15 | **15+** |
+| Technical Indicators | 11+ | **14+** |
+| Telegram Commands | 9 | **9** |
+| Agent Systems | 2 | **4** |
 
-### Key Metrics
-| Metric | Value |
-|--------|-------|
-| API Endpoints | 42 |
-| Service Classes | 30 |
-| Database Tables | 15 (PostgreSQL + TimescaleDB) |
-| Technical Indicators | 11+ |
-| Telegram Commands | 9 |
-| Compliance Score | 100% |
-| Data Provenance | Morningstar/Yahoo (no mocks) |
+---
+
+## MIT Natural Language Agent System
+
+The MIT system includes a **4-agent NLP architecture** for natural language interaction:
+
+### Agent 1: Manager Agent (`manager-agent.ts`)
+**Purpose**: Orchestrates queries across other agents, intent detection
+
+| Feature | Implementation |
+|---------|---------------|
+| Intent Detection | `trade_action`, `feature_request`, `analysis`, `data_request`, `general_query` |
+| Entity Extraction | Tickers, date ranges, metrics from natural language |
+| Alias Resolution | 40+ known stock aliases (TATA STEEL → TATASTEEL, etc.) |
+| Query Parser | `query-parser.ts` - Converts NL to structured queries |
+
+### Agent 2: Librarian Agent (`librarian-agent.ts`)
+**Purpose**: Research and news lookup
+
+| Feature | Implementation |
+|---------|---------------|
+| News Fetch | Scrapes Yahoo Finance, MoneyControl, Screener.in |
+| Article Summarization | LLM-powered summarization |
+| Source Filtering | Filter by domain, language |
+| Related News | Finds related articles by ticker |
+
+### Agent 3: Analyst Agent (`analyst-agent.ts`)
+**Purpose**: Technical and fundamental analysis
+
+| Feature | Implementation |
+|---------|---------------|
+| Technical Analysis | RSI, MACD, Bollinger Bands, Moving Averages |
+| Fundamental Analysis | PE vs peers, sector comparison |
+| Peer Comparison | Sector-relative valuation |
+| Period Returns | 1W, 1M, 3M, 6M, 1Y calculations |
+
+### Agent 4: Coder Agent (`coder-agent.ts`)
+**Purpose**: Feature request code generation
+
+| Feature | Implementation |
+|---------|---------------|
+| Feature Parsing | Extract requirements from natural language |
+| Code Generation | Generates TypeScript code for new features |
+| Acceptance Criteria | Parses and formats user requirements |
+| Related Features | Suggests related functionality |
+
+### Query Flexibility (`query-parser.ts`)
+
+| Feature | Example |
+|---------|---------|
+| Ticker Aliases | "tata steel", "infy", "hdfc bank" |
+| Metric Filters | "PE > 20", "RSI gt 70" |
+| Date Ranges | "last 3 months", "2024-01-01 to 2024-03-31" |
+| Output Formats | chart, table, text, links, csv |
+
+---
+
+## Strategy-AI Algorithmic Trading System
+
+A **complete algorithmic trading system** separate from MIT with strategy generation, simulation, and optimization:
+
+### Core Components
+
+| Service | File | Purpose |
+|---------|------|---------|
+| **StrategyStore** | `store.ts` | CRUD operations for strategies |
+| **StrategyGenerator** | `generator.ts` | Generate strategies from templates |
+| **Simulator** | `simulator.ts` | Backtest strategies on historical data |
+| **BatchSimulator** | `batch-simulator.ts` | Parallel batch simulation |
+| **WalkForward** | `walkforward.ts` | Walk-forward analysis with fold validation |
+| **Ranker** | `ranker.ts` | Multi-factor strategy ranking |
+| **RulebookEngine** | `rulebook.ts` | Rule-based allocation system |
+| **GameTheoryEngine** | `game-theory/index.ts` | Nash equilibrium, evolutionary strategies |
+
+### Strategy DSL (`dsl/`)
+
+| File | Purpose |
+|------|---------|
+| `signal-definitions.ts` | Signal type definitions (RSI, MACD, SMA, etc.) |
+| `risk-definitions.ts` | Risk parameter definitions |
+| `filter-definitions.ts` | Stock screening filters |
+| `validation-rules.ts` | Zod validation for strategies |
+| `strategy-schema.ts` | Complete strategy schema |
+
+### Strategy Execution (`execution.ts`)
+
+| Feature | Implementation |
+|---------|---------------|
+| Paper Trading | Simulated order execution |
+| Position Management | Entry/exit with fees |
+| Risk Controls | Max positions, max notional |
+| Order Types | Market, Limit, Stop-loss |
+
+### LLM Integration (`llm-provider.ts`)
+
+| Provider | Status |
+|----------|--------|
+| OpenAI | ✅ Configured |
+| Anthropic | ✅ Configured |
+| Google Gemini | ✅ Configured |
+| Azure OpenAI | ✅ Configured |
+
+### API Endpoints (Strategy-AI)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/strategies` | POST/GET | Create/list strategies |
+| `/api/strategies/:id` | GET/PUT/DELETE | CRUD operations |
+| `/api/strategies/:id/generate` | POST | Generate from template |
+| `/api/strategies/:id/simulate` | POST | Run simulation |
+| `/api/sim-runs` | GET | List simulation runs |
+| `/api/sim-runs/batch` | POST | Batch simulation |
+| `/api/rankings` | GET | Global strategy rankings |
+| `/api/rankings/sector/:sector` | GET | Sector rankings |
+| `/api/rulebook` | GET/POST | Rulebook operations |
+| `/api/rulebook/recommend` | GET | Get allocations |
+| `/api/game-experiments` | POST/GET | Game theory experiments |
+
+---
+
+## Policy Signal Terminal (Original System)
+
+The **Policy Signal System** runs alongside MIT for tracking India policy signals:
+
+### Signal Pipeline Services
+
+| Service | File | Purpose |
+|---------|------|---------|
+| **IngestionService** | `ingestion.ts` | RSS/XML/HTML/PDF source ingestion |
+| **ParserService** | `parser.ts` | Multi-format content parsing |
+| **ClassifierService** | `classifier.ts` | Policy classification |
+| **EntityLinkerService** | `entity-linker.ts` | Link entities to tickers |
+| **ImpactScorerService** | `impact-scorer.ts` | Score policy impact |
+| **PredictionService** | `prediction.ts` | Outcome prediction |
+| **AlertService** | `alerts.ts` | Alert creation and routing |
+| **ScreeningService** | `screening.ts` | Signal screening |
+
+### Data Quality Services
+
+| Service | File | Purpose |
+|---------|------|---------|
+| **DeduplicationService** | `deduplication.ts` | Remove duplicate signals |
+| **SourceRegistryService** | `source-registry.ts` | Source management |
+| **SourceDriftService** | `source-drift.ts` | Detect source quality drift |
+| **SourceReliabilityLoop** | `source-reliability-loop.ts` | Automated reliability scoring |
+
+### Analytics Services
+
+| Service | File | Purpose |
+|---------|------|---------|
+| **AnomalyDetector** | `anomaly-correlation.ts` | Correlate anomalies with signals |
+| **OutcomesService** | `outcomes.ts` | Track signal outcomes |
+| **LearningLoop** | `learning-loop.ts` | Feedback loop for signal quality |
+
+### Governance & SRE
+
+| Service | File | Purpose |
+|---------|------|---------|
+| **GovernanceHardening** | `governance-hardening.ts` | Policy checks, release gates |
+| **SREService** | `sre.ts` | SLO budgets, chaos drills |
+| **PilotService** | `pilot.ts` | Feature rollout tracking |
+
+### Backfill System
+
+| Service | File | Purpose |
+|---------|------|---------|
+| **HistoricalBackfill** | `historical-backfill.ts` | Historical data replay |
+| **BackfillControl** | `backfill-control.ts` | Backfill orchestration |
+| **RealNewsBackfill** | `real-news-backfill.ts` | News data backfill |
 
 ---
 
@@ -697,3 +869,34 @@ curl http://localhost:3000/api/mit/portfolio
 **Generated:** 2026-02-13
 **Plan:** `.sisyphus/plans/mit-qvm-hardening-and-proof.md`
 **Evidence:** `.sisyphus/evidence/`
+
+---
+
+## Known Issues & Technical Debt
+
+> See `flaws.md` for complete bug catalog (90 issues identified)
+
+### Critical Issues Requiring Attention
+
+| Issue | Severity | Impact |
+|-------|----------|--------|
+| Position ID collision risk (Date.now() + random) | CRITICAL | Data corruption on concurrent trades |
+| Non-atomic transactions | CRITICAL | Lost updates, state corruption |
+| Telegram webhook no auth | CRITICAL | Spoofed trade execution possible |
+| Hero execute doesn't execute trade | CRITICAL | Phantom execution - no actual trade |
+| Division by zero in technical indicators | CRITICAL | System crash potential |
+| JSON parse errors silently reset portfolio | CRITICAL | Data loss |
+
+### High Priority Issues
+
+| Issue | Impact |
+|-------|--------|
+| Read-only flows writing stale state | Trade updates overwritten |
+| Cash deducted before position success | Money lost on errors |
+| Stop override accepts NaN | Risk controls disabled |
+| Sector scoring always returns null | Biased hero picks |
+| Beta shows score not actual beta | Wrong risk metrics shown |
+
+---
+
+*For complete bug details and fix recommendations, see `flaws.md`*

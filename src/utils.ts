@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export function sha256(input: string): string {
@@ -38,8 +38,38 @@ export async function readJsonFile<T>(filePath: string, fallback: T): Promise<T>
 export async function writeJsonFile<T>(filePath: string, value: T): Promise<void> {
   await ensureDir(path.dirname(filePath));
   const tempPath = `${filePath}.${crypto.randomUUID()}.tmp`;
-  await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  await rename(tempPath, filePath);
+  const backupPath = `${filePath}.bak`;
+  try {
+    try {
+      await copyFile(filePath, backupPath);
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code !== "ENOENT") {
+        throw error;
+      }
+    }
+
+    await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+
+    const fileHandle = await open(tempPath, "r");
+    try {
+      await fileHandle.sync();
+    } finally {
+      await fileHandle.close();
+    }
+
+    await rename(tempPath, filePath);
+
+    const dirHandle = await open(path.dirname(filePath), "r");
+    try {
+      await dirHandle.sync();
+    } finally {
+      await dirHandle.close();
+    }
+  } catch (error) {
+    await unlink(tempPath).catch(() => undefined);
+    throw error;
+  }
 }
 
 export function normalizeWhitespace(value: string): string {

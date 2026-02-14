@@ -163,8 +163,9 @@ class LoggerService {
       await this.rotateIfNeeded();
       try {
         await appendFile(this.currentLogFile, this.formatEntry(entry));
-      } catch {
-        // Silently fail if file write fails
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "unknown error";
+        console.warn(`MIT logger file write failed: ${message}`);
       }
     }
   }

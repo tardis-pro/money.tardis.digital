@@ -1,6 +1,7 @@
 import type { DailyCandle, FundamentalSnapshot, MitWatchlistIdea, TechnicalSnapshot } from "../../mit-types.js";
 import { atrPct, beta, calculateReturns, rSquared, sma } from "./technical-indicators.js";
 import { MarketDataService } from "./market-data.js";
+import mitUniverse from "../../config/mit-universe.json" with { type: "json" };
 
 export interface HeroScore {
   symbol: string;
@@ -54,6 +55,9 @@ const DEFAULT_THRESHOLDS = {
 export class HeroAnalyst {
   private marketData: MarketDataService | null = null;
   private benchmarkCache: Map<string, DailyCandle[]> = new Map();
+  private readonly sectorByTicker = new Map(
+    (mitUniverse as Array<{ ticker: string; sector: string }>).map((row) => [row.ticker.toUpperCase(), row.sector.toLowerCase()]),
+  );
 
   constructor(private config?: { weights?: typeof DEFAULT_WEIGHTS; thresholds?: typeof DEFAULT_THRESHOLDS }) {
     this.config = {
@@ -107,11 +111,11 @@ export class HeroAnalyst {
     }
 
     const volatilityScore = this.scoreVolatility(candles);
-    const correlationScore = await this.scoreCorrelation(candles, ticker);
+    const correlation = await this.scoreCorrelation(candles, ticker);
     const trendScore = this.scoreTrend(candles);
     const sectorScore = await this.scoreSector(candles, candidate);
 
-    if (correlationScore === null) {
+    if (correlation === null) {
       return null;
     }
 
@@ -119,10 +123,10 @@ export class HeroAnalyst {
     const totalScore =
       volatilityScore * weights.volatility +
       trendScore * weights.trend +
-      correlationScore * weights.correlation +
+      correlation.score * weights.correlation +
       sectorScore * weights.sector;
 
-    const narrative = this.buildNarrative(volatilityScore, correlationScore, trendScore, sectorScore, candidate);
+    const narrative = this.buildNarrative(volatilityScore, correlation.score, trendScore, sectorScore, candidate);
 
     return {
       symbol: ticker,
@@ -130,7 +134,7 @@ export class HeroAnalyst {
       narrative,
       metrics: {
         atrPct: this.getAtrPct(candles),
-        beta: correlationScore,
+        beta: correlation.beta,
         r2: trendScore / 30,
         sectorTrend: sectorScore > 0 ? "Up" : "Down",
       },
@@ -151,7 +155,7 @@ export class HeroAnalyst {
     return Math.max(0, Math.min(maxScore, score));
   }
 
-  private async scoreCorrelation(candles: DailyCandle[], ticker: string): Promise<number | null> {
+  private async scoreCorrelation(candles: DailyCandle[], ticker: string): Promise<{ score: number; beta: number } | null> {
     const stockReturns = calculateReturns(candles.map(c => c.close));
 
     let benchmarkCandles: DailyCandle[] | undefined;
@@ -169,31 +173,36 @@ export class HeroAnalyst {
     }
 
     if (!benchmarkCandles || benchmarkCandles.length < 30) {
-      return 10;
+      return { score: 10, beta: 1 };
     }
 
     const benchmarkReturns = calculateReturns(benchmarkCandles.map(c => c.close));
     const betaValue = beta(stockReturns, benchmarkReturns);
 
     if (betaValue === null) {
-      return 10;
+      return { score: 10, beta: 1 };
     }
 
     const maxScore = 20;
+    let score: number;
 
     if (betaValue >= 0.8 && betaValue <= 1.2) {
-      return maxScore;
+      score = maxScore;
+      return { score, beta: betaValue };
     }
 
     if (betaValue > 1.5) {
-      return Math.max(0, maxScore - (betaValue - 1.5) * 10);
+      score = Math.max(0, maxScore - (betaValue - 1.5) * 10);
+      return { score, beta: betaValue };
     }
 
     if (betaValue < 0) {
-      return Math.max(0, 5 + betaValue * 2);
+      score = Math.max(0, 5 + betaValue * 2);
+      return { score, beta: betaValue };
     }
 
-    return maxScore - Math.abs(betaValue - 1) * 10;
+    score = maxScore - Math.abs(betaValue - 1) * 10;
+    return { score, beta: betaValue };
   }
 
   private scoreTrend(candles: DailyCandle[]): number {
@@ -269,7 +278,7 @@ export class HeroAnalyst {
   }
 
   private getSectorFromTicker(ticker: string): string | null {
-    return null;
+    return this.sectorByTicker.get(ticker.toUpperCase()) ?? null;
   }
 
   private getAtrPct(candles: DailyCandle[]): number {

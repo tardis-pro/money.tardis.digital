@@ -1,6 +1,12 @@
-try { process.loadEnvFile(); } catch {}
+try {
+  process.loadEnvFile();
+} catch (error) {
+  const message = error instanceof Error ? error.message : "unknown error";
+  console.warn(`Unable to load .env file: ${message}`);
+}
 
 import Fastify from "fastify";
+import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
@@ -419,6 +425,18 @@ async function buildServer() {
   const pilot = new PilotService(store);
   const launch = new LaunchService(store);
 
+  app.addHook("onRequest", async (request, reply) => {
+    reply.header("x-request-id", request.id);
+  });
+
+  app.addHook("onSend", async (_request, reply, payload) => {
+    reply.header("x-content-type-options", "nosniff");
+    reply.header("x-frame-options", "DENY");
+    reply.header("referrer-policy", "no-referrer");
+    reply.header("permissions-policy", "camera=(), microphone=(), geolocation=()");
+    return payload;
+  });
+
   function requestUserId(request: { headers: Record<string, unknown> }): string {
     const header = request.headers["x-user-id"];
     if (typeof header === "string" && header.trim().length > 0) {
@@ -500,6 +518,27 @@ async function buildServer() {
   app.get("/", async (_request, reply) => {
     const html = await getHtml();
     return reply.type("text/html").send(html);
+  });
+
+  app.get("/health", async () => ({
+    status: "ok",
+    now: new Date().toISOString(),
+    uptimeSec: Math.floor(process.uptime()),
+  }));
+
+  app.get("/ready", async (_request, reply) => {
+    try {
+      await Promise.all([store.read(), mitStore.read()]);
+      return {
+        status: "ready",
+        now: new Date().toISOString(),
+      };
+    } catch (error) {
+      return reply.code(503).send({
+        status: "not-ready",
+        error: error instanceof Error ? error.message : "Readiness check failed",
+      });
+    }
   });
 
   app.get("/terminal", async (_request, reply) => {
@@ -1879,7 +1918,7 @@ async function buildServer() {
     if (telegramWebhookSecret) {
       const header = request.headers["x-telegram-bot-api-secret-token"];
       const provided = typeof header === "string" ? header : Array.isArray(header) ? header[0] : undefined;
-      if (!provided || provided !== telegramWebhookSecret) {
+      if (!isMatchingSecretToken(provided, telegramWebhookSecret)) {
         return reply.code(403).send({ error: "Invalid webhook secret" });
       }
     }
@@ -1922,7 +1961,16 @@ async function buildServer() {
         await telegramService.answerCallbackQuery(callbackQuery.id, `Executing ${payload.ticker}...`);
 
         const riskAmount = payload.buyPrice - payload.stopLoss;
-        const qty = Math.max(1, Math.floor(10000 / riskAmount));
+        if (!Number.isFinite(riskAmount) || riskAmount <= 0) {
+          await telegramService.answerCallbackQuery(callbackQuery.id, "Invalid risk setup");
+          return reply.code(200).send({ ok: true, action: "execute", success: false, reason: "Invalid risk setup" });
+        }
+        const rawQty = Math.floor(10000 / riskAmount);
+        const qty = Math.max(1, Math.min(rawQty, 100000));
+        if (!Number.isFinite(qty) || qty <= 0) {
+          await telegramService.answerCallbackQuery(callbackQuery.id, "Invalid position size");
+          return reply.code(200).send({ ok: true, action: "execute", success: false, reason: "Invalid position size" });
+        }
 
         const entered = await mitStore.transaction((draft) => tradeManager.enter(draft, {
           ticker: payload.ticker,
@@ -2309,10 +2357,42 @@ Stocks: ${ticker1} vs ${ticker2}
   return app;
 }
 
+function isMatchingSecretToken(provided: string | undefined, expected: string): boolean {
+  if (!provided || provided.length !== expected.length) {
+    return false;
+  }
+  return timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
+}
+
 const port = Number(process.env.PORT ?? 3000);
 
 const app = await buildServer();
 await app.listen({ host: "0.0.0.0", port });
+
+let shuttingDown = false;
+async function shutdown(signal: "SIGINT" | "SIGTERM"): Promise<void> {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+  console.log(`Received ${signal}; shutting down...`);
+  try {
+    await app.close();
+    process.exit(0);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown error";
+    console.error(`Graceful shutdown failed: ${message}`);
+    process.exit(1);
+  }
+}
+
+process.once("SIGINT", () => {
+  void shutdown("SIGINT");
+});
+
+process.once("SIGTERM", () => {
+  void shutdown("SIGTERM");
+});
 
 console.log(`Server running at http://localhost:${port}`);
 if (isDev) {

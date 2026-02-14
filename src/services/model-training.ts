@@ -65,9 +65,14 @@ export class ModelTrainingService {
       });
     });
 
-    const model = JSON.parse(await readFile(modelPath, "utf8")) as {
-      metrics: TrainModelResult["metrics"];
-    };
+    const modelRaw = await readFile(modelPath, "utf8");
+    let model: { metrics: TrainModelResult["metrics"] };
+    try {
+      model = JSON.parse(modelRaw) as { metrics: TrainModelResult["metrics"] };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      throw new Error(`Training completed but model JSON could not be parsed: ${message}`);
+    }
 
     return {
       modelPath,

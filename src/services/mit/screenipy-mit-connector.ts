@@ -157,16 +157,34 @@ export function enrichWithMITScores(rows: ScreeniPyRow[], options?: { fundamenta
 
 export class MITScreeniPyService {
   private readonly screeniPyService: ScreeniPyService;
+  private consecutiveFailures = 0;
+  private circuitOpenUntil = 0;
   
   constructor() {
     this.screeniPyService = new ScreeniPyService();
   }
   
   async runScan(config: ScreeniPyMITConfig = {}): Promise<MITScreeniPyRow[]> {
+    const now = Date.now();
+    if (now < this.circuitOpenUntil) {
+      const retryAfterSec = Math.max(1, Math.ceil((this.circuitOpenUntil - now) / 1000));
+      throw new Error(`ScreeniPy circuit open, retry after ${retryAfterSec}s`);
+    }
+
     const tickerOption = config.tickerOption || "1";
     const executeOption = config.executeOption || "0";
-    const rows = await this.screeniPyService.run({ tickerOption, executeOption });
-    return enrichWithMITScores(rows);
+    try {
+      const rows = await this.screeniPyService.run({ tickerOption, executeOption });
+      this.consecutiveFailures = 0;
+      this.circuitOpenUntil = 0;
+      return enrichWithMITScores(rows);
+    } catch (error) {
+      this.consecutiveFailures += 1;
+      if (this.consecutiveFailures >= 3) {
+        this.circuitOpenUntil = Date.now() + 30_000;
+      }
+      throw error;
+    }
   }
   
   async getTopCandidates(config: ScreeniPyMITConfig = {}, limit: number = 10): Promise<MITScreeniPyRow[]> {

@@ -71,7 +71,7 @@ function detectIndicators(
   if (position.currentPrice <= stop) {
     list.push("stop-breach");
   }
-  if (technicals && technicals.dma50 !== null && technicals.atr14 !== null && technicals.latestClose < technicals.dma50) {
+  if (technicals && technicals.dma50 !== null && technicals.atr14 !== null && position.currentPrice < technicals.dma50) {
     list.push("momentum-decay");
   }
   return list;

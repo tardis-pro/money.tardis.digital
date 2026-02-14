@@ -168,7 +168,10 @@ function MitIdeaCard({ idea }: { idea: any }) {
 // === Holdings Card (Blueprint Section 9: progress bar stop→target, status indicators) ===
 function MitHoldingCard({ position: p }: { position: any }) {
   const pnlPct = p.unrealizedPnlPct ?? 0;
-  const daysHeld = p.entryDate ? Math.floor((Date.now() - Date.parse(p.entryDate)) / 86400000) : 0;
+  const parsedEntryDate = p.entryDate ? Date.parse(p.entryDate) : NaN;
+  const daysHeld = Number.isFinite(parsedEntryDate)
+    ? Math.floor((Date.now() - parsedEntryDate) / 86400000)
+    : 0;
   const stop = p.trailingActive ? (p.trailingStop ?? p.stopLoss) : p.stopLoss;
   const target = p.firstTarget;
   const range = target - stop;

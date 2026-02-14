@@ -10,7 +10,8 @@ export class AlertService {
       .sort((a, b) => b.triggeredAt.localeCompare(a.triggeredAt))[0];
 
     if (lastAlert) {
-      const elapsed = Date.now() - Date.parse(lastAlert.triggeredAt);
+      const triggeredAt = Date.parse(lastAlert.triggeredAt);
+      const elapsed = Number.isFinite(triggeredAt) ? Date.now() - triggeredAt : Number.POSITIVE_INFINITY;
       if (elapsed < COOLDOWN_MS) {
         return {
           create: false,

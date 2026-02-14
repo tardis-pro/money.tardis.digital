@@ -35,7 +35,8 @@ function buildCooldownSet(runs: MitDailyRunResult[]): Set<string> {
   const tickers = new Set<string>();
   const cutoff = Date.now() - COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
   for (const run of runs) {
-    if (Date.parse(run.date) < cutoff) continue;
+    const runTs = Date.parse(run.date);
+    if (!Number.isFinite(runTs) || runTs < cutoff) continue;
     for (const idea of run.ideas) {
       if (idea.feed === "quant" && !idea.isAvoid) {
         tickers.add(idea.ticker);

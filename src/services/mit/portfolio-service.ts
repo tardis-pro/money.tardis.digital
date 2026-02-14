@@ -108,6 +108,10 @@ export class MitPortfolioService {
     pos.allocatedAmount = round2(newCost);
     pos.entryPrice = input.entryPrice;
     pos.entryDate = input.entryDate ?? pos.entryDate;
+    pos.maxPriceSinceEntry = Math.max(pos.maxPriceSinceEntry, input.entryPrice);
+    pos.minPriceSinceEntry = Math.min(pos.minPriceSinceEntry, input.entryPrice);
+    pos.unrealizedPnl = round2((pos.currentPrice - pos.entryPrice) * pos.qty);
+    pos.unrealizedPnlPct = pos.entryPrice > 0 ? ((pos.currentPrice - pos.entryPrice) / pos.entryPrice) * 100 : 0;
     pos.confirmedEntry = true;
     pos.updatedAt = new Date().toISOString();
     return { ok: true };
@@ -119,7 +123,7 @@ export class MitPortfolioService {
     if (!pos) {
       return { ok: false, reason: "Position not found" };
     }
-    if (pos.qty <= 0 || input.qty <= 0 || input.qty > pos.qty) {
+    if (!Number.isFinite(pos.qty) || pos.qty <= 0 || input.qty <= 0 || input.qty > pos.qty) {
       return { ok: false, reason: "Invalid quantity" };
     }
     const now = new Date().toISOString();

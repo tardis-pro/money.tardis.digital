@@ -86,13 +86,19 @@ export class TimescaleTechnicalStore {
       await this.pool.query(
         `SELECT create_hypertable('${SCHEMA}.ta_candlesticks', 'ts', if_not_exists => TRUE, migrate_data => TRUE)`,
       );
-    } catch {}
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      console.warn(`Could not create hypertable ${SCHEMA}.ta_candlesticks: ${message}`);
+    }
 
     try {
       await this.pool.query(
         `SELECT create_hypertable('${SCHEMA}.ta_indicators', 'ts', if_not_exists => TRUE, migrate_data => TRUE)`,
       );
-    } catch {}
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      console.warn(`Could not create hypertable ${SCHEMA}.ta_indicators: ${message}`);
+    }
 
     await this.pool.query(
       `CREATE INDEX IF NOT EXISTS idx_ta_candlesticks_ticker_ts_desc ON ${SCHEMA}.ta_candlesticks (ticker, ts DESC)`,

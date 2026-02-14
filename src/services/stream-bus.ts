@@ -59,12 +59,13 @@ export class StreamBusService {
       }
     }
     const latest = state.streamEvents[state.streamEvents.length - 1] ?? null;
+    const latestTs = latest ? Date.parse(latest.publishedAt) : null;
     return {
       latestSequence: state.streamSequence,
       eventsLastMinute,
       eventsLastFiveMinutes,
       latestPublishedAt: latest?.publishedAt ?? null,
-      estimatedLagMs: latest ? Math.max(0, now - Date.parse(latest.publishedAt)) : null,
+      estimatedLagMs: latestTs !== null && Number.isFinite(latestTs) ? Math.max(0, now - latestTs) : null,
     };
   }
 }

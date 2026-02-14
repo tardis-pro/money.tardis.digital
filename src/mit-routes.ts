@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { Store } from "./store.js";
 import type { MitStore } from "./mit-store.js";
@@ -169,6 +169,10 @@ const tickerParamSchema = z.object({
   ticker: z.string().regex(/^[A-Z0-9._-]{1,20}$/i),
 });
 
+const runIdParamSchema = z.object({
+  runId: z.string().min(1),
+});
+
 const screenipyCandidatesQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(20),
   feed: z.enum(["all", "nt-lite", "quant"]).default("all"),
@@ -194,9 +198,25 @@ const newsQuerySchema = z.object({
   end: z.string().optional(),
 });
 
+const screenipyRunQuerySchema = z.object({
+  tickerOption: z.string().optional(),
+  executeOption: z.string().optional(),
+});
+
+const screenerCsvImportSchema = z.object({
+  csv: z.string().min(1),
+});
+
+const fundamentalsRefreshSchema = z.object({
+  tickers: z.array(z.string().regex(/^[A-Z0-9._-]{1,20}$/i)).optional(),
+  limit: z.number().int().positive().max(500).optional(),
+}).optional();
+
 const runStatus = new Map<string, { status: "started" | "completed" | "failed"; result?: unknown; error?: string }>();
 let screenipyCache: { rows: ReturnType<typeof enrichWithMITScores>; fetchedAt: string } | null = null;
 const SCREENIPY_CACHE_TTL_MS = 5 * 60 * 1000;
+const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
+let pipelineStateQueue: Promise<void> = Promise.resolve();
 const IST_REFRESH_SLOTS = (process.env.MIT_INTRADAY_REFRESH_SLOTS ?? "10:00,12:30,14:45")
   .split(",")
   .map((value) => value.trim())
@@ -215,6 +235,43 @@ let dailyPipelineLock: {
   startedAt: null,
   completedAt: null,
 };
+
+function rateLimitId(request: FastifyRequest): string {
+  const userId = request.headers["x-user-id"];
+  const actor = typeof userId === "string" && userId.trim().length > 0 ? userId.trim() : request.ip;
+  return actor;
+}
+
+function withinRateLimit(bucket: string, key: string, max: number, windowMs: number): { ok: true } | { ok: false; retryAfterSec: number } {
+  const now = Date.now();
+  const composite = `${bucket}:${key}`;
+  const existing = rateLimitBuckets.get(composite);
+  if (!existing || now >= existing.resetAt) {
+    rateLimitBuckets.set(composite, { count: 1, resetAt: now + windowMs });
+    return { ok: true };
+  }
+
+  if (existing.count >= max) {
+    return { ok: false, retryAfterSec: Math.max(1, Math.ceil((existing.resetAt - now) / 1000)) };
+  }
+
+  existing.count += 1;
+  return { ok: true };
+}
+
+async function withPipelineStateLock<T>(fn: () => Promise<T> | T): Promise<T> {
+  let release: () => void = () => {};
+  const previous = pipelineStateQueue;
+  pipelineStateQueue = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
 
 const schedulerState: {
   started: boolean;
@@ -249,9 +306,20 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
 
   // Screenipy real-data scan endpoints
   app.get("/api/mit/screenipy/run", async (request, reply) => {
-    const query = request.query as { tickerOption?: string; executeOption?: string };
-    const tickerOption = query.tickerOption ?? "1";
-    const executeOption = query.executeOption ?? "0";
+    const limit = withinRateLimit("screenipy-run", rateLimitId(request), 3, 60_000);
+    if (!limit.ok) {
+      return reply
+        .code(429)
+        .header("retry-after", String(limit.retryAfterSec))
+        .send({ error: "Rate limit exceeded", retryAfterSec: limit.retryAfterSec });
+    }
+
+    const parsed = screenipyRunQuerySchema.safeParse(request.query ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues });
+    }
+    const tickerOption = parsed.data.tickerOption ?? "1";
+    const executeOption = parsed.data.executeOption ?? "0";
     
     try {
       const rows = await screeniPyService.runScan({ tickerOption, executeOption });
@@ -270,7 +338,7 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   });
 
   app.get("/api/mit/screenipy/latest", async () => {
-    if (!screenipyCache || Date.now() - Date.parse(screenipyCache.fetchedAt) > SCREENIPY_CACHE_TTL_MS) {
+    if (!screenipyCache || !isFreshCache(screenipyCache.fetchedAt)) {
       screenipyCache = null;
       return { error: "No cached scan. Run /api/mit/screenipy/run first." };
     }
@@ -282,7 +350,7 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues });
     }
-    if (!screenipyCache || Date.now() - Date.parse(screenipyCache.fetchedAt) > SCREENIPY_CACHE_TTL_MS) {
+    if (!screenipyCache || !isFreshCache(screenipyCache.fetchedAt)) {
       screenipyCache = null;
       return { error: "No cached scan" };
     }
@@ -305,7 +373,11 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   });
 
   app.get("/api/mit/fundamentals/:ticker", async (request, reply) => {
-    const ticker = String((request.params as { ticker?: string }).ticker ?? "").toUpperCase();
+    const paramsParsed = tickerParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: paramsParsed.error.issues });
+    }
+    const ticker = paramsParsed.data.ticker.toUpperCase();
     const state = await deps.mitStore.read();
     const data = state.fundamentals[ticker];
     if (!data) {
@@ -315,7 +387,11 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   });
 
   app.get("/api/mit/checklist/:ticker", async (request, reply) => {
-    const ticker = String((request.params as { ticker?: string }).ticker ?? "").toUpperCase();
+    const paramsParsed = tickerParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: paramsParsed.error.issues });
+    }
+    const ticker = paramsParsed.data.ticker.toUpperCase();
     const state = await deps.mitStore.read();
     const fundamental = state.fundamentals[ticker];
     if (!fundamental) {
@@ -344,8 +420,12 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
     });
   });
 
-  app.get("/api/mit/peers/:ticker", async (request) => {
-    const ticker = String((request.params as { ticker?: string }).ticker ?? "").toUpperCase();
+  app.get("/api/mit/peers/:ticker", async (request, reply) => {
+    const paramsParsed = tickerParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: paramsParsed.error.issues });
+    }
+    const ticker = paramsParsed.data.ticker.toUpperCase();
     const state = await deps.mitStore.read();
     const all = computePeerMedianPEBySector(universe.map((u) => ({ ticker: u.ticker, sector: u.sector })), state.fundamentals);
     const median = peerMedianForTicker(ticker, universe.map((u) => ({ ticker: u.ticker, sector: u.sector })), all);
@@ -355,12 +435,19 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   app.get("/api/mit/sentiment/tone", async () => {
     const mit = await deps.mitStore.read();
     const state = await deps.store.read();
-    const recent = state.signals.filter((s) => Date.now() - Date.parse(s.createdAt) <= 24 * 60 * 60 * 1000);
+    const recent = state.signals.filter((s) => {
+      const createdAt = Date.parse(s.createdAt);
+      return Number.isFinite(createdAt) && Date.now() - createdAt <= 24 * 60 * 60 * 1000;
+    });
     return { marketTone: detectMarketTone(recent, mit.technicals) };
   });
 
-  app.get("/api/mit/sentiment/:ticker/flags", async (request) => {
-    const ticker = String((request.params as { ticker?: string }).ticker ?? "").toUpperCase();
+  app.get("/api/mit/sentiment/:ticker/flags", async (request, reply) => {
+    const paramsParsed = tickerParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: paramsParsed.error.issues });
+    }
+    const ticker = paramsParsed.data.ticker.toUpperCase();
     const mit = await deps.mitStore.read();
     const state = await deps.store.read();
     const fundamental = mit.fundamentals[ticker];
@@ -373,11 +460,11 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   });
 
   app.post("/api/mit/import/screener-csv", async (request, reply) => {
-    const body = request.body as { csv?: string };
-    if (!body?.csv) {
-      return reply.code(400).send({ error: "csv is required" });
+    const parsedBody = screenerCsvImportSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return reply.code(400).send({ error: parsedBody.error.issues });
     }
-    const parsed = parseScreenerCsv(body.csv, { source: "screener-csv" });
+    const parsed = parseScreenerCsv(parsedBody.data.csv, { source: "screener-csv" });
     await deps.mitStore.transaction((draft) => {
       for (const snapshot of parsed.success) {
         draft.fundamentals[snapshot.ticker] = snapshot;
@@ -413,7 +500,11 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   });
 
   app.post("/api/mit/fundamentals/refresh", async (request, reply) => {
-    const body = request.body as { tickers?: string[]; limit?: number } | undefined;
+    const parsedBody = fundamentalsRefreshSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return reply.code(400).send({ error: parsedBody.error.issues });
+    }
+    const body = parsedBody.data;
     const state = await deps.mitStore.read();
     const universeTickers = universe.map((entry) => entry.ticker.toUpperCase());
     const chosen = (body?.tickers && body.tickers.length > 0
@@ -442,7 +533,11 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   });
 
   app.get("/api/mit/technicals/:ticker", async (request, reply) => {
-    const ticker = String((request.params as { ticker?: string }).ticker ?? "").toUpperCase();
+    const paramsParsed = tickerParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: paramsParsed.error.issues });
+    }
+    const ticker = paramsParsed.data.ticker.toUpperCase();
     const state = await deps.mitStore.read();
     const technicals = state.technicals[ticker];
     if (!technicals) {
@@ -452,7 +547,11 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   });
 
   app.get("/api/mit/score/:ticker", async (request, reply) => {
-    const ticker = String((request.params as { ticker?: string }).ticker ?? "").toUpperCase();
+    const paramsParsed = tickerParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: paramsParsed.error.issues });
+    }
+    const ticker = paramsParsed.data.ticker.toUpperCase();
     const state = await deps.mitStore.read();
     const score = state.compositeScores[ticker];
     if (!score) {
@@ -462,7 +561,11 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   });
 
   app.get("/api/mit/entry-exit/:ticker", async (request, reply) => {
-    const ticker = String((request.params as { ticker?: string }).ticker ?? "").toUpperCase();
+    const paramsParsed = tickerParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: paramsParsed.error.issues });
+    }
+    const ticker = paramsParsed.data.ticker.toUpperCase();
     const state = await deps.mitStore.read();
     const technicals = state.technicals[ticker];
     const candles = state.candles[ticker];
@@ -485,35 +588,62 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   });
 
   app.post("/api/mit/pipeline/run", async (request, reply) => {
+    const limit = withinRateLimit("pipeline-run", rateLimitId(request), 2, 60_000);
+    if (!limit.ok) {
+      return reply
+        .code(429)
+        .header("retry-after", String(limit.retryAfterSec))
+        .send({ error: "Rate limit exceeded", retryAfterSec: limit.retryAfterSec });
+    }
+
     const today = new Date().toISOString().slice(0, 10);
     const dateBasedRunId = `mit-run-${today}`;
 
-    if (dailyPipelineLock.status === "running" && dailyPipelineLock.date === today) {
+    const startDecision = await withPipelineStateLock(() => {
+      if (dailyPipelineLock.status === "running" && dailyPipelineLock.date === today) {
+        return {
+          kind: "already-running" as const,
+          runId: dailyPipelineLock.runId,
+          startedAt: dailyPipelineLock.startedAt,
+        };
+      }
+
+      if (dailyPipelineLock.status === "completed" && dailyPipelineLock.date === today) {
+        return {
+          kind: "already-completed" as const,
+          runId: dailyPipelineLock.runId,
+          completedAt: dailyPipelineLock.completedAt,
+        };
+      }
+
+      dailyPipelineLock = {
+        date: today,
+        status: "running",
+        runId: dateBasedRunId,
+        startedAt: new Date().toISOString(),
+        completedAt: null,
+      };
+      runStatus.set(dateBasedRunId, { status: "started" });
+
+      return { kind: "started" as const };
+    });
+
+    if (startDecision.kind === "already-running") {
       return reply.code(423).send({
         error: "Pipeline already running",
-        runId: dailyPipelineLock.runId,
-        startedAt: dailyPipelineLock.startedAt,
+        runId: startDecision.runId,
+        startedAt: startDecision.startedAt,
       });
     }
 
-    if (dailyPipelineLock.status === "completed" && dailyPipelineLock.date === today) {
+    if (startDecision.kind === "already-completed") {
       return reply.code(200).send({
         status: "already_completed",
-        runId: dailyPipelineLock.runId,
-        completedAt: dailyPipelineLock.completedAt,
+        runId: startDecision.runId,
+        completedAt: startDecision.completedAt,
         message: "Pipeline already completed for today. Use /api/mit/pipeline/latest for results.",
       });
     }
-
-    dailyPipelineLock = {
-      date: today,
-      status: "running",
-      runId: dateBasedRunId,
-      startedAt: new Date().toISOString(),
-      completedAt: null,
-    };
-
-    runStatus.set(dateBasedRunId, { status: "started" });
 
     (async () => {
       try {
@@ -539,7 +669,8 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
           screenipyRows = rawRows.map((row) => ({ ...row, fundamentalsAvailable: fundamentalsTickers.has(row.stock.toUpperCase()) }));
           screenipyCache = { rows: screenipyRows, fetchedAt: new Date().toISOString() };
         } catch (e) {
-          console.warn("Screenipy scan failed, using fallback", e);
+          const message = e instanceof Error ? e.message : "unknown error";
+          console.warn(`Screenipy scan failed, using fallback: ${message}`);
         }
 
         await deps.mitStore.transaction(async (draft) => {
@@ -763,20 +894,23 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
               fundamentalsRefreshFailed: fundamentalsRefresh.failed,
             },
           });
-          dailyPipelineLock.status = "completed";
-          dailyPipelineLock.completedAt = completedAt;
           draft.portfolio.lastPipelineRun = completedAt;
           return null;
         });
-        if (!runStatus.get(dateBasedRunId) || runStatus.get(dateBasedRunId)?.status !== "completed") {
-          runStatus.set(dateBasedRunId, { status: "completed", result: { runId: dateBasedRunId } });
+
+        await withPipelineStateLock(() => {
+          if (!runStatus.get(dateBasedRunId) || runStatus.get(dateBasedRunId)?.status !== "completed") {
+            runStatus.set(dateBasedRunId, { status: "completed", result: { runId: dateBasedRunId } });
+          }
           dailyPipelineLock.status = "completed";
           dailyPipelineLock.completedAt = new Date().toISOString();
-        }
+        });
       } catch (error) {
-        runStatus.set(dateBasedRunId, { status: "failed", error: error instanceof Error ? error.message : String(error) });
-        dailyPipelineLock.status = "failed";
-        dailyPipelineLock.completedAt = new Date().toISOString();
+        await withPipelineStateLock(() => {
+          runStatus.set(dateBasedRunId, { status: "failed", error: error instanceof Error ? error.message : String(error) });
+          dailyPipelineLock.status = "failed";
+          dailyPipelineLock.completedAt = new Date().toISOString();
+        });
       }
     })();
 
@@ -784,7 +918,11 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   });
 
   app.get("/api/mit/pipeline/status/:runId", async (request, reply) => {
-    const runId = String((request.params as { runId?: string }).runId ?? "");
+    const paramsParsed = runIdParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: paramsParsed.error.issues });
+    }
+    const runId = paramsParsed.data.runId;
     const status = runStatus.get(runId);
     if (!status) {
       return reply.code(404).send({ error: "run not found" });
@@ -811,6 +949,14 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   });
 
   app.get("/api/mit/hero/analyze", async (request, reply) => {
+    const limit = withinRateLimit("hero-analyze", rateLimitId(request), 10, 60_000);
+    if (!limit.ok) {
+      return reply
+        .code(429)
+        .header("retry-after", String(limit.retryAfterSec))
+        .send({ error: "Rate limit exceeded", retryAfterSec: limit.retryAfterSec });
+    }
+
     const state = await deps.mitStore.read();
     const latest = [...state.dailyRuns].sort((a, b) => b.date.localeCompare(a.date))[0];
     if (!latest) {
@@ -849,6 +995,14 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   });
 
   app.get("/api/mit/hero/brief", async (request, reply) => {
+    const limit = withinRateLimit("hero-brief", rateLimitId(request), 10, 60_000);
+    if (!limit.ok) {
+      return reply
+        .code(429)
+        .header("retry-after", String(limit.retryAfterSec))
+        .send({ error: "Rate limit exceeded", retryAfterSec: limit.retryAfterSec });
+    }
+
     const state = await deps.mitStore.read();
     const latest = [...state.dailyRuns].sort((a, b) => b.date.localeCompare(a.date))[0];
     if (!latest) {
@@ -1077,16 +1231,16 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
     for (const idea of ideas) {
       const p = idea.entryExitPlan;
       rows.push([
-        idea.ticker,
-        idea.feed,
-        p.buyZoneLow.toFixed(2),
-        p.buyZoneHigh.toFixed(2),
-        p.stopLoss.toFixed(2),
-        p.firstTarget.toFixed(2),
-        String(idea.compositeScore.total),
-        String(idea.isAvoid),
-        idea.avoidReason ?? "",
-      ].map(v => v.includes(",") || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v).join(","));
+        toCsvCell(idea.ticker),
+        toCsvCell(idea.feed),
+        toCsvCell(p.buyZoneLow.toFixed(2)),
+        toCsvCell(p.buyZoneHigh.toFixed(2)),
+        toCsvCell(p.stopLoss.toFixed(2)),
+        toCsvCell(p.firstTarget.toFixed(2)),
+        toCsvCell(String(idea.compositeScore.total)),
+        toCsvCell(String(idea.isAvoid)),
+        toCsvCell(idea.avoidReason ?? ""),
+      ].join(","));
     }
     reply.header("content-type", "text/csv");
     reply.header("content-disposition", `attachment; filename="mit-watchlist-${new Date().toISOString().slice(0, 10)}.csv"`);
@@ -1434,6 +1588,11 @@ function toCsvCell(value: string): string {
   return value;
 }
 
+function isFreshCache(fetchedAt: string): boolean {
+  const parsed = Date.parse(fetchedAt);
+  return Number.isFinite(parsed) && Date.now() - parsed <= SCREENIPY_CACHE_TTL_MS;
+}
+
 function toManagerQueryRequest(input: z.infer<typeof managerQuerySchema>): ManagerQueryRequest {
   const context = input.context
     ? {
@@ -1722,7 +1881,9 @@ function setupIntradayPriceScheduler(deps: { mitStore: MitStore }, marketData: M
     schedulerState.doneSlots.add(stamp);
     try {
       await deps.mitStore.transaction((draft) => refreshPortfolioFromMarket(draft, marketData));
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      console.warn(`Intraday portfolio refresh failed for slot ${stamp}: ${message}`);
       schedulerState.doneSlots.delete(stamp);
     }
   }, 60_000);

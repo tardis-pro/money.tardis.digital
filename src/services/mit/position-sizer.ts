@@ -11,8 +11,11 @@ export function sizePosition(
   const allocPctRaw = customAllocPct ?? settings.allocPct;
   const allocPct = Number.isFinite(allocPctRaw) ? Math.min(1, Math.max(0.01, allocPctRaw)) : settings.allocPct;
   const allocatedAmount = settings.capital * allocPct;
-  const fromAllocation = Math.floor(allocatedAmount / entryPrice);
-  const units = requestedQty !== undefined ? Math.max(0, Math.floor(requestedQty)) : fromAllocation;
+  const rawUnits = allocatedAmount / entryPrice;
+  const roundedUnits = Number.isFinite(rawUnits) ? Math.round(rawUnits) : 0;
+  const fromAllocation = Math.max(0, roundedUnits);
+  const requestedUnits = requestedQty !== undefined ? Math.max(0, Math.floor(requestedQty)) : null;
+  const units = requestedUnits ?? fromAllocation;
   const cost = units * entryPrice;
   const deployed = portfolio.positions.reduce((sum, p) => sum + p.qty * p.currentPrice, 0);
 
