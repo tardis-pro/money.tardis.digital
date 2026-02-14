@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { Store } from "./store.js";
 import type { MitStore } from "./mit-store.js";
+import { acquireLock, checkRedisHealth, closeRedis } from "./services/redis-lock.js";
+import { audit } from "./services/audit-log.js";
 import type {
   MitUniverseEntry,
   MitWatchlistIdea,
@@ -260,6 +262,20 @@ function withinRateLimit(bucket: string, key: string, max: number, windowMs: num
 }
 
 async function withPipelineStateLock<T>(fn: () => Promise<T> | T): Promise<T> {
+  const redisAvailable = await checkRedisHealth().catch(() => false);
+  
+  if (redisAvailable) {
+    const release = await acquireLock("mit:pipeline:lock", 60000, 30000);
+    if (release) {
+      try {
+        return await fn();
+      } finally {
+        await release();
+      }
+    }
+    throw new Error("Failed to acquire pipeline lock - another instance may be running");
+  }
+  
   let release: () => void = () => {};
   const previous = pipelineStateQueue;
   pipelineStateQueue = new Promise<void>((resolve) => {
@@ -1094,6 +1110,11 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
     if (!result.ok) {
       return reply.code(400).send(result);
     }
+    audit("TRADE_ENTER", { 
+      ticker: body.ticker, 
+      entryPrice: body.entryPrice,
+      qty: body.qty,
+    }, { ip: request.ip });
     return result;
   });
 
@@ -1112,6 +1133,12 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
     if (!result.ok) {
       return reply.code(400).send(result);
     }
+    audit("TRADE_EXIT", { 
+      positionId: parsed.data.positionId,
+      qty: parsed.data.qty,
+      exitPrice: parsed.data.exitPrice,
+      reason: parsed.data.reason,
+    }, { ip: request.ip });
     return result;
   });
 
@@ -1159,6 +1186,24 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
     return checkGuard(state.portfolio);
   });
 
+  app.get("/api/mit/metrics", async () => {
+    const { getMetrics, getCounter, getGauge, getHistogramStats } = await import("./services/metrics.js");
+    return {
+      recent: getMetrics(50),
+      counters: {
+        apiRequests: getCounter("api_requests"),
+        tradeEnter: getCounter("trade_enter"),
+        tradeExit: getCounter("trade_exit"),
+      },
+      gauges: {
+        activePositions: getGauge("active_positions"),
+      },
+      histograms: {
+        apiLatency: getHistogramStats("api_latency"),
+      },
+    };
+  });
+
   app.get("/api/mit/anomalies", async () => {
     const state = await deps.mitStore.read();
     return detectMitAnomalies(state.candles);
@@ -1167,6 +1212,17 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   app.get("/api/mit/trades", async () => {
     const state = await deps.mitStore.read();
     return state.portfolio.closedTrades;
+  });
+
+  app.get("/api/mit/audit", async (request) => {
+    const query = request.query as Record<string, string | undefined>;
+    const limit = Math.min(parseInt(String(query.limit ?? "100"), 10), 500);
+    const action = query.action;
+    const { getAuditLog, getAuditLogByAction } = await import("./services/audit-log.js");
+    if (action) {
+      return getAuditLogByAction(action as "TRADE_ENTER" | "TRADE_EXIT" | "POSITION_UPDATE" | "STOP_OVERRIDE" | "SETTINGS_CHANGE" | "PIPELINE_RUN" | "HERO_EXECUTE" | "HERO_PASS", limit);
+    }
+    return getAuditLog(limit);
   });
 
   app.get("/api/mit/quant/signals", async () => {

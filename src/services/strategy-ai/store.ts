@@ -489,12 +489,12 @@ export class StrategyStore {
     return result.rows[0]?.value ?? null;
   }
 
-  async setConfig(key: string, value: any): Promise<void> {
+  async setConfig(key: string, value: unknown): Promise<void> {
     await this.pool.query(
       `INSERT INTO ${SCHEMA}.system_config (key, value, updated_at)
        VALUES ($1, $2, NOW())
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
-      [key, value],
+      [key, JSON.stringify(value)],
     );
   }
 

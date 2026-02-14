@@ -11,12 +11,13 @@
     "migrate": "tsx scripts/migrate.mjs",
     "data:load": "node scripts/full-load.mjs",
     "screenipy:run": "python3 src/screenipy.py 1 0 --output data/screenipy-latest.csv",
-    "build": "tsc -p tsconfig.json && vite build && vite build --ssr src/server-entry.tsx --outDir dist/server",
+    "build": "tsc -p tsconfig.json && vite build && vite build --config terminal.vite.config.js && vite build --ssr --config vite.ssr.config.ts --outDir dist/server",
     "build:client": "vite build --outDir dist/client --manifest",
-    "build:server": "vite build --ssr src/server-entry.tsx --outDir dist/server",
+    "build:server": "vite build --ssr src/server-entry-svelte.tsx --outDir dist/server",
+    "build:terminal": "vite build --config terminal.vite.config.js --outDir dist/terminal",
     "start": "NODE_ENV=production node dist/server/server-entry.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build --silent && node --test dist/test/*.test.js",
+    "test": "bun run build && node --test dist/test/*.test.js",
     "e2e:backfill": "node scripts/e2e_backfill.mjs"
   },
   "dependencies": {
@@ -25,6 +26,7 @@
     "fastify": "^5.2.1",
     "framer-motion": "^12.33.0",
     "htm": "^3.1.1",
+    "ioredis": "^5.9.3",
     "pg": "^8.13.1",
     "recharts": "^3.7.0",
     "zod": "^3.24.1"

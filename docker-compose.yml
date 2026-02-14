@@ -1,4 +1,20 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: mit-redis
+    ports:
+      - "0.0.0.0:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - mit-network
+
   app:
     build:
       context: .
@@ -9,6 +25,7 @@ services:
     environment:
       STORE_BACKEND: postgres
       DATABASE_URL: postgres://postgres:postgres@timescaledb:5432/policy_signal
+      REDIS_URL: redis://redis:6379
       PORT: 3000
       NODE_ENV: production
       MIT_INTRADAY_REFRESH_SLOTS: "10:00,12:30,14:45"
@@ -17,6 +34,8 @@ services:
       SCREENIPY_SCRIPT_PATH: /app/src/screenipy.py
     depends_on:
       timescaledb:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     volumes:
       - ./data:/app/data
@@ -82,3 +101,4 @@ networks:
 
 volumes:
   timescaledb_data:
+  redis_data:

@@ -5,6 +5,9 @@ try {
   console.warn(`Unable to load .env file: ${message}`);
 }
 
+import { validateEnv } from "./services/config-validate.js";
+validateEnv();
+
 import Fastify from "fastify";
 import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -56,11 +59,12 @@ import { TelegramNotificationService, type HeroAlertPayload } from "./services/t
 import { SurveillanceBot, getSurveillanceBot } from "./services/mit/surveillance-bot.js";
 import { TelegramFeatureService, getTelegramFeatureService } from "./services/telegram-feature-service.js";
 import { MitTradeManager } from "./services/mit/trade-manager.js";
+import { closeRedis } from "./services/redis-lock.js";
 
 const isDev = process.env.NODE_ENV !== "production";
 
 async function getHtml() {
-  const template = await readFile(path.join(process.cwd(), isDev ? "index.html" : "dist/client/index.html"), "utf-8");
+  const template = await readFile(path.join(process.cwd(), isDev ? "index.html" : "dist/terminal/index.html"), "utf-8");
   
   if (!isDev) {
     try {
@@ -2381,6 +2385,7 @@ async function shutdown(signal: "SIGINT" | "SIGTERM"): Promise<void> {
   console.log(`Received ${signal}; shutting down...`);
   try {
     await app.close();
+    await closeRedis().catch((e: Error) => console.warn("Redis close error:", e.message));
     process.exit(0);
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown error";
