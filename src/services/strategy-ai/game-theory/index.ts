@@ -242,21 +242,29 @@ export class GameTheoryEngine {
   async runExperiment(experiment: GameExperiment): Promise<GameResult> {
     const startedAt = Date.now();
     const warnings: string[] = [];
-    const strategies = await this.getStrategiesByIds(experiment.strategies);
+    await this.store.upsertGameExperiment({
+      id: experiment.id,
+      type: experiment.type,
+      status: "running",
+      createdAt: experiment.createdAt,
+      payload: experiment as unknown as Record<string, unknown>,
+    });
+    try {
+      const strategies = await this.getStrategiesByIds(experiment.strategies);
 
-    if (strategies.length === 0) {
-      warnings.push("No valid strategies found for experiment.");
-      const empty = this.emptyResult(Date.now() - startedAt, warnings);
-      this.storeExperimentResult(experiment, empty);
-      return empty;
-    }
+      if (strategies.length === 0) {
+        warnings.push("No valid strategies found for experiment.");
+        const empty = this.emptyResult(Date.now() - startedAt, warnings);
+        this.storeExperimentResult(experiment, empty);
+        return empty;
+      }
 
-    if (strategies.length !== experiment.strategies.length) {
-      warnings.push("Some strategy IDs were not found and were ignored.");
-    }
+      if (strategies.length !== experiment.strategies.length) {
+        warnings.push("Some strategy IDs were not found and were ignored.");
+      }
 
-    let result: GameResult;
-    if (experiment.type === "nash-equilibrium") {
+      let result: GameResult;
+      if (experiment.type === "nash-equilibrium") {
       const nash = await this.findNashEquilibrium(strategies);
       result = {
         equilibriumFound: nash.equilibriumFound,
@@ -270,7 +278,7 @@ export class GameTheoryEngine {
         runtime: 0,
         warnings,
       };
-    } else if (experiment.type === "evolutionary") {
+      } else if (experiment.type === "evolutionary") {
       const evolution = await this.evolvePopulation(strategies, {
         generations: experiment.config.generations,
         populationSize: experiment.config.populationSize,
@@ -293,7 +301,7 @@ export class GameTheoryEngine {
         runtime: 0,
         warnings,
       };
-    } else if (experiment.type === "zero-sum") {
+      } else if (experiment.type === "zero-sum") {
       const payoffMatrix = await this.computeZeroSumPayoffs(strategies);
       const gto = this.findGTOStrategy(payoffMatrix);
       result = {
@@ -308,7 +316,7 @@ export class GameTheoryEngine {
         runtime: 0,
         warnings,
       };
-    } else if (experiment.type === "cooperator-defector") {
+      } else if (experiment.type === "cooperator-defector") {
       const dilemma = await this.playDilemma(strategies, Math.max(1, experiment.config.iterations));
       const clusters = await this.findCooperativeClusters(strategies);
       result = {
@@ -326,7 +334,7 @@ export class GameTheoryEngine {
         runtime: 0,
         warnings,
       };
-    } else {
+      } else {
       const matrix = await this.computePayoffMatrix(strategies);
       const signalScore = this.computeSignalEfficiency(strategies, experiment.config.signalTypes);
       result = {
@@ -345,9 +353,84 @@ export class GameTheoryEngine {
       };
     }
 
-    result.runtime = Date.now() - startedAt;
-    this.storeExperimentResult(experiment, result);
-    return result;
+      result.runtime = Date.now() - startedAt;
+      this.storeExperimentResult(experiment, result);
+      const completedAt = new Date().toISOString();
+
+      await this.store.upsertGameExperiment({
+        id: experiment.id,
+        type: experiment.type,
+        status: "completed",
+        createdAt: experiment.createdAt,
+        completedAt,
+        payload: {
+          ...experiment,
+          completedAt,
+          results: result,
+        } as unknown as Record<string, unknown>,
+      });
+
+      if (result.payoffMatrix.length > 0) {
+        await this.store.createPayoffMatrix({
+          id: `payoff-${experiment.id}-${Date.now()}`,
+          experimentId: experiment.id,
+          createdAt: completedAt,
+          payload: {
+            experimentId: experiment.id,
+            strategies: experiment.strategies,
+            matrix: result.payoffMatrix,
+            exploitability: result.exploitability,
+          },
+        });
+      }
+
+      if (experiment.type === "evolutionary") {
+        for (let generation = 0; generation < result.convergenceProgress.length; generation += 1) {
+          await this.store.createEvolutionHistory({
+            id: `evo-${experiment.id}-${generation}`,
+            experimentId: experiment.id,
+            generation,
+            createdAt: completedAt,
+            payload: {
+              experimentId: experiment.id,
+              generation,
+              score: result.convergenceProgress[generation] ?? 0,
+              fitnessHistory: result.fitnessHistory,
+              bestStrategies: result.bestStrategies,
+            },
+          });
+        }
+      }
+
+      if (result.equilibriumFound) {
+        await this.store.createNashEquilibrium({
+          id: `nash-${experiment.id}-${Date.now()}`,
+          experimentId: experiment.id,
+          createdAt: completedAt,
+          payload: {
+            experimentId: experiment.id,
+            equilibriumStrategies: result.equilibriumStrategies ?? [],
+            exploitability: result.exploitability,
+            convergenceProgress: result.convergenceProgress,
+          },
+        });
+      }
+
+      return result;
+    } catch (error) {
+      await this.store.upsertGameExperiment({
+        id: experiment.id,
+        type: experiment.type,
+        status: "failed",
+        createdAt: experiment.createdAt,
+        completedAt: new Date().toISOString(),
+        payload: {
+          ...experiment,
+          error: error instanceof Error ? error.message : String(error),
+        } as unknown as Record<string, unknown>,
+      });
+      throw error;
+    }
   }
 
   getExperiment(id: string): GameExperiment | null {

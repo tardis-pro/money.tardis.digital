@@ -9,6 +9,7 @@
     "dev:server": "tsx src/server.ts",
     "dev:terminal": "vite --config terminal.vite.config.js",
     "migrate": "tsx scripts/migrate.mjs",
+    "strategy:suite": "tsx scripts/run_historical_strategy_suite.mjs",
     "data:load": "node scripts/full-load.mjs",
     "screenipy:run": "python3 src/screenipy.py 1 0 --output data/screenipy-latest.csv",
     "build": "tsc -p tsconfig.json && vite build && vite build --config terminal.vite.config.js && vite build --ssr --config vite.ssr.config.ts --outDir dist/server",

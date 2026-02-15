@@ -102,6 +102,15 @@ export class MitPostgresStore implements MitStore {
       )
     `);
 
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS ${SCHEMA}.fundamentals_history (
+        ticker text NOT NULL,
+        fetched_at timestamptz NOT NULL,
+        payload jsonb NOT NULL,
+        PRIMARY KEY (ticker, fetched_at)
+      )
+    `);
+
     // Technicals per ticker
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS ${SCHEMA}.technicals (
@@ -172,6 +181,18 @@ export class MitPostgresStore implements MitStore {
     } catch {
       // hypertable may already exist or timescaledb not available — continue
     }
+
+    try {
+      await this.pool.query(
+        `SELECT create_hypertable('${SCHEMA}.fundamentals_history', 'fetched_at', if_not_exists => TRUE, migrate_data => TRUE)`,
+      );
+    } catch {
+      // hypertable may already exist or timescaledb not available — continue
+    }
+
+    await this.pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_mit_fundamentals_history_ticker_fetched_at_desc ON ${SCHEMA}.fundamentals_history (ticker, fetched_at DESC)`,
+    );
 
     // Seed singleton rows if missing
     await this.pool.query(`
@@ -371,6 +392,14 @@ export class MitPostgresStore implements MitStore {
            ON CONFLICT (ticker) DO UPDATE SET payload = $2::jsonb`,
           [ticker, JSON.stringify(snapshot)],
         );
+
+        const fetchedAt = extractSnapshotTimestamp(snapshot);
+        await client.query(
+          `INSERT INTO ${SCHEMA}.fundamentals_history (ticker, fetched_at, payload)
+           VALUES ($1, $2, $3::jsonb)
+           ON CONFLICT (ticker, fetched_at) DO UPDATE SET payload = $3::jsonb`,
+          [ticker, fetchedAt, JSON.stringify(snapshot)],
+        );
       }
 
       // Technicals — upsert per ticker
@@ -490,4 +519,14 @@ function defaultPortfolio() {
     paused: false,
     lastPipelineRun: null,
   };
+}
+
+function extractSnapshotTimestamp(snapshot: unknown): string {
+  if (snapshot && typeof snapshot === "object") {
+    const maybeFetchedAt = (snapshot as { fetchedAt?: unknown }).fetchedAt;
+    if (typeof maybeFetchedAt === "string" && Number.isFinite(new Date(maybeFetchedAt).getTime())) {
+      return maybeFetchedAt;
+    }
+  }
+  return new Date().toISOString();
 }

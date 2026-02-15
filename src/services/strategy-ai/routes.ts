@@ -3,11 +3,13 @@ import { BUILTIN_TEMPLATES, StrategyGenerator } from "./generator.js";
 import type { Strategy } from "./dsl/strategy-schema.js";
 import { NLManagerAgent, type ChatMessage, type LLMProvider } from "./manager-agent.js";
 import { Simulator, type SimulationConfig, type SimulationResult } from "./simulator.js";
+import { HistoricalBacktester, type BacktestConfig, type BacktestResult, type MonteCarloResult } from "./historical-backtest.js";
 import { Ranker } from "./ranker.js";
 import { BatchSimulator } from "./batch-simulator.js";
 import { RulebookEngine, type ContextFeatures } from "./rulebook.js";
 import { GameTheoryEngine } from "./game-theory/index.js";
-import { StrategyStore, type SimRun, type StrategyStoreFilters } from "./store.js";
+import { StrategyStore, type SimRun, type StrategyStoreFilters, type BacktestRun } from "./store.js";
+import { TimescaleTechnicalStore } from "./ta-store.js";
 
 const DEFAULT_SIMULATION_CONFIG: SimulationConfig = {
   startDate: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(),
@@ -31,6 +33,9 @@ export async function registerStrategyAiRoutes(app: FastifyInstance): Promise<vo
   const store = new StrategyStore();
   await store.init();
 
+  const taStore = new TimescaleTechnicalStore();
+  await taStore.init();
+
   const generator = new StrategyGenerator({
     numVariations: 12,
     mutationRate: 0.35,
@@ -42,7 +47,7 @@ export async function registerStrategyAiRoutes(app: FastifyInstance): Promise<vo
     store,
     generator,
   });
-  const simulator = new Simulator(DEFAULT_SIMULATION_CONFIG);
+  const simulator = new Simulator({ ...DEFAULT_SIMULATION_CONFIG, taStore });
   const batchSimulator = new BatchSimulator({ simulator, store });
   const ranker = new Ranker({ store });
   const rulebook = new RulebookEngine({ store, ranker });
@@ -161,7 +166,7 @@ export async function registerStrategyAiRoutes(app: FastifyInstance): Promise<vo
         return reply.code(404).send({ error: `Strategy not found: ${id}` });
       }
 
-      const config = toSimulationConfig(request.body, DEFAULT_SIMULATION_CONFIG);
+      const config = toSimulationConfig(request.body, { ...DEFAULT_SIMULATION_CONFIG, taStore });
       const singleRunSimulator = new Simulator(config);
       const result = await singleRunSimulator.run(strategy);
       const simRun = toSimRun(result);
@@ -230,7 +235,7 @@ export async function registerStrategyAiRoutes(app: FastifyInstance): Promise<vo
         return reply.code(400).send({ error: "No strategies available for batch simulation" });
       }
 
-      const config = toSimulationConfig(body?.config, DEFAULT_SIMULATION_CONFIG);
+      const config = toSimulationConfig(body?.config, { ...DEFAULT_SIMULATION_CONFIG, taStore });
       const resultMap = await batchSimulator.runBatch(selected, config);
       const results = Array.from(resultMap.values());
 
@@ -379,6 +384,290 @@ export async function registerStrategyAiRoutes(app: FastifyInstance): Promise<vo
       return reply.code(500).send({ error: messageOf(error) });
     }
   });
+
+  const defaultBacktestConfig: BacktestConfig = {
+    startDate: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(),
+    endDate: new Date().toISOString(),
+    initialCapital: 1_000_000,
+    commissionRate: 0.0005,
+    slippageRate: 0.0005,
+    maxPositionSize: 0.2,
+    riskPerTrade: 0.02,
+    allowMultiplePositions: true,
+  };
+
+  app.post("/api/backtest/run", async (request, reply) => {
+    try {
+      const body = request.body as {
+        strategyId: string;
+        ticker?: string;
+        config?: Partial<BacktestConfig>;
+      } | undefined;
+
+      if (!body?.strategyId) {
+        return reply.code(400).send({ error: "strategyId is required" });
+      }
+
+      const strategy = await store.getStrategy(body.strategyId);
+      if (!strategy) {
+        return reply.code(404).send({ error: `Strategy not found: ${body.strategyId}` });
+      }
+
+      const config = { ...defaultBacktestConfig, ...body.config };
+      const backtester = new HistoricalBacktester(taStore, config);
+      
+      const ticker = body.ticker ?? (strategy.universe.mode === "custom_tickers" && strategy.universe.tickers.length > 0 
+        ? strategy.universe.tickers[0] 
+        : "SANDBOX") ?? "SANDBOX";
+
+      const result = await backtester.run(strategy, ticker);
+
+      const backtestRun: BacktestRun = {
+        id: result.runId,
+        strategyId: result.strategyId,
+        ticker: result.ticker,
+        startDate: result.startDate,
+        endDate: result.endDate,
+        backtestType: "historical",
+        createdAt: new Date().toISOString(),
+        payload: result as unknown as Record<string, unknown>,
+      };
+      await store.createBacktestRun(backtestRun);
+
+      return { backtest: result };
+    } catch (error) {
+      return reply.code(500).send({ error: messageOf(error) });
+    }
+  });
+
+  app.post("/api/backtest/universe", async (request, reply) => {
+    try {
+      const body = request.body as {
+        strategyId: string;
+        config?: Partial<BacktestConfig>;
+      } | undefined;
+
+      if (!body?.strategyId) {
+        return reply.code(400).send({ error: "strategyId is required" });
+      }
+
+      const strategy = await store.getStrategy(body.strategyId);
+      if (!strategy) {
+        return reply.code(404).send({ error: `Strategy not found: ${body.strategyId}` });
+      }
+
+      const config = { ...defaultBacktestConfig, ...body.config };
+      const backtester = new HistoricalBacktester(taStore, config);
+      
+      const results = await backtester.runUniverse(strategy);
+
+      for (const result of results) {
+        const backtestRun: BacktestRun = {
+          id: result.runId,
+          strategyId: result.strategyId,
+          ticker: result.ticker,
+          startDate: result.startDate,
+          endDate: result.endDate,
+          backtestType: "historical",
+          createdAt: new Date().toISOString(),
+          payload: result as unknown as Record<string, unknown>,
+        };
+        await store.createBacktestRun(backtestRun);
+      }
+
+      return { backtests: results, count: results.length };
+    } catch (error) {
+      return reply.code(500).send({ error: messageOf(error) });
+    }
+  });
+
+  app.post("/api/backtest/walkforward", async (request, reply) => {
+    try {
+      const body = request.body as {
+        strategyId: string;
+        ticker?: string;
+        trainDays?: number;
+        testDays?: number;
+        stepDays?: number;
+      } | undefined;
+
+      if (!body?.strategyId) {
+        return reply.code(400).send({ error: "strategyId is required" });
+      }
+
+      const strategy = await store.getStrategy(body.strategyId);
+      if (!strategy) {
+        return reply.code(404).send({ error: `Strategy not found: ${body.strategyId}` });
+      }
+
+      const config = { ...defaultBacktestConfig };
+      const backtester = new HistoricalBacktester(taStore, config);
+      
+      const ticker = body.ticker ?? (strategy.universe.mode === "custom_tickers" && strategy.universe.tickers.length > 0 
+        ? strategy.universe.tickers[0] 
+        : "SANDBOX") ?? "SANDBOX";
+
+      const results = await backtester.runWalkForward(
+        strategy, 
+        ticker,
+        body.trainDays ?? 252,
+        body.testDays ?? 63,
+        body.stepDays ?? 21
+      );
+
+      for (const result of results) {
+        const backtestRun: BacktestRun = {
+          id: result.runId,
+          strategyId: result.strategyId,
+          ticker: result.ticker,
+          startDate: result.startDate,
+          endDate: result.endDate,
+          backtestType: "walkforward",
+          createdAt: new Date().toISOString(),
+          payload: result as unknown as Record<string, unknown>,
+        };
+        await store.createBacktestRun(backtestRun);
+      }
+
+      return { walkforward: results, windows: results.length };
+    } catch (error) {
+      return reply.code(500).send({ error: messageOf(error) });
+    }
+  });
+
+  app.post("/api/backtest/montecarlo", async (request, reply) => {
+    try {
+      const body = request.body as {
+        strategyId: string;
+        ticker?: string;
+        simulations?: number;
+      } | undefined;
+
+      if (!body?.strategyId) {
+        return reply.code(400).send({ error: "strategyId is required" });
+      }
+
+      const strategy = await store.getStrategy(body.strategyId);
+      if (!strategy) {
+        return reply.code(404).send({ error: `Strategy not found: ${body.strategyId}` });
+      }
+
+      const config = { ...defaultBacktestConfig };
+      const backtester = new HistoricalBacktester(taStore, config);
+      
+      const ticker = body.ticker ?? (strategy.universe.mode === "custom_tickers" && strategy.universe.tickers.length > 0 
+        ? strategy.universe.tickers[0] 
+        : "SANDBOX") ?? "SANDBOX";
+
+      const result = await backtester.runMonteCarlo(
+        strategy, 
+        ticker,
+        body.simulations ?? 1000
+      );
+
+      return { montecarlo: result };
+    } catch (error) {
+      return reply.code(500).send({ error: messageOf(error) });
+    }
+  });
+
+  app.post("/api/backtest/batch", async (request, reply) => {
+    try {
+      const body = request.body as {
+        strategyIds?: string[];
+        strategyFilter?: { status?: Strategy["status"]; sector?: string; tags?: string[] };
+        tickers?: string[];
+        config?: Partial<BacktestConfig>;
+      } | undefined;
+
+      let strategies: Strategy[] = [];
+      
+      if (Array.isArray(body?.strategyIds) && body.strategyIds.length > 0) {
+        const loaded = await Promise.all(body.strategyIds.map(id => store.getStrategy(id)));
+        strategies = loaded.filter((s): s is Strategy => s !== null);
+      } else if (body?.strategyFilter) {
+        strategies = await store.listStrategies({
+          ...(body.strategyFilter.status ? { status: body.strategyFilter.status } : {}),
+          ...(body.strategyFilter.sector ? { sector: body.strategyFilter.sector } : {}),
+          ...(body.strategyFilter.tags ? { tags: body.strategyFilter.tags } : {}),
+          limit: 100,
+          offset: 0,
+        });
+      }
+
+      if (strategies.length === 0) {
+        return reply.code(400).send({ error: "No strategies available for batch backtest" });
+      }
+
+      const config = { ...defaultBacktestConfig, ...body?.config };
+      const backtester = new HistoricalBacktester(taStore, config);
+      
+      const resultMap = await backtester.runBatch(strategies, body?.tickers);
+      const results = Array.from(resultMap.values());
+
+      for (const result of results) {
+        const backtestRun: BacktestRun = {
+          id: result.runId,
+          strategyId: result.strategyId,
+          ticker: result.ticker,
+          startDate: result.startDate,
+          endDate: result.endDate,
+          backtestType: "historical",
+          createdAt: new Date().toISOString(),
+          payload: result as unknown as Record<string, unknown>,
+        };
+        await store.createBacktestRun(backtestRun);
+      }
+
+      return { 
+        totalRequested: strategies.length,
+        completed: results.length,
+        backtests: results 
+      };
+    } catch (error) {
+      return reply.code(500).send({ error: messageOf(error) });
+    }
+  });
+
+  app.get("/api/backtest/runs", async (request, reply) => {
+    try {
+      const query = request.query as { strategyId?: string; ticker?: string; backtestType?: string };
+      const runs = await store.listBacktestRuns({
+        ...(query.strategyId ? { strategyId: query.strategyId } : {}),
+        ...(query.ticker ? { ticker: query.ticker } : {}),
+        ...(query.backtestType ? { backtestType: query.backtestType } : {}),
+      });
+      return { backtestRuns: runs, count: runs.length };
+    } catch (error) {
+      return reply.code(500).send({ error: messageOf(error) });
+    }
+  });
+
+  app.get("/api/backtest/runs/:id", async (request, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const run = await store.getBacktestRun(id);
+      if (!run) {
+        return reply.code(404).send({ error: `Backtest run not found: ${id}` });
+      }
+      return { backtestRun: run };
+    } catch (error) {
+      return reply.code(500).send({ error: messageOf(error) });
+    }
+  });
+
+  app.get("/api/backtest/metrics", async (request, reply) => {
+    try {
+      const query = request.query as { strategyId?: string; ticker?: string };
+      const metrics = await store.getBacktestMetrics({
+        ...(query.strategyId ? { strategyId: query.strategyId } : {}),
+        ...(query.ticker ? { ticker: query.ticker } : {}),
+      });
+      return { metrics };
+    } catch (error) {
+      return reply.code(500).send({ error: messageOf(error) });
+    }
+  });
 }
 
 function normalize(value: string): string {
@@ -426,6 +715,8 @@ function toSimulationConfig(input: unknown, fallback: SimulationConfig): Simulat
     initialCapital: positiveNumber(candidate.initialCapital, fallback.initialCapital),
     commissionRate: nonNegativeNumber(candidate.commissionRate, fallback.commissionRate),
     slippageRate: nonNegativeNumber(candidate.slippageRate, fallback.slippageRate),
+    ...(candidate.taStore ? { taStore: candidate.taStore } : fallback.taStore ? { taStore: fallback.taStore } : {}),
+    ...(Array.isArray(candidate.tickers) ? { tickers: candidate.tickers } : fallback.tickers ? { tickers: fallback.tickers } : {}),
     ...(typeof candidate.regime === "string" ? { regime: candidate.regime } : {}),
     ...(Array.isArray(candidate.walkForwardWindows) ? { walkForwardWindows: candidate.walkForwardWindows } : {}),
   };

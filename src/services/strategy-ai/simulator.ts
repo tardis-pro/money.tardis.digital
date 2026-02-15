@@ -1,4 +1,5 @@
 import type { Strategy } from "./dsl/strategy-schema.js";
+import type { TimescaleTechnicalStore } from "./ta-store.js";
 
 export interface SimulationConfig {
   startDate: string;
@@ -11,6 +12,8 @@ export interface SimulationConfig {
     startDate: string;
     endDate: string;
   }>;
+  taStore?: TimescaleTechnicalStore;
+  tickers?: string[];
 }
 
 export interface Trade {
@@ -78,12 +81,26 @@ export class Simulator {
   }
 
   async run(strategy: Strategy): Promise<SimulationResult> {
-    const ticker = strategy.universe.mode === "custom_tickers" && strategy.universe.tickers.length > 0
-      ? (strategy.universe.tickers[0] ?? "SANDBOX")
-      : "SANDBOX";
+    if (!this.config.taStore) {
+      throw new Error("Simulation requires Timescale technical store (taStore) for historical candles");
+    }
 
-    const dates = this.getDateRange(this.config.startDate, this.config.endDate);
-    const prices = dates.map((_, index) => this.syntheticPrice(strategy.id, index));
+    const tickers = this.config.tickers ?? 
+      (strategy.universe.mode === "custom_tickers" && strategy.universe.tickers.length > 0
+        ? strategy.universe.tickers
+        : ["SANDBOX"]);
+    const ticker = tickers[0] ?? "SANDBOX";
+
+    const candles = await this.config.taStore.getCandles(
+      ticker,
+      new Date(this.config.startDate),
+      new Date(this.config.endDate),
+    );
+    if (candles.length < 30) {
+      throw new Error(`Insufficient historical candles for ${ticker}. Need at least 30, got ${candles.length}`);
+    }
+    const dates = candles.map((candle) => candle.timestamp.toISOString());
+    const prices = candles.map((candle) => candle.close);
 
     const trades: Trade[] = [];
     const equityCurve: EquityPoint[] = [];
@@ -319,15 +336,6 @@ export class Simulator {
     return result;
   }
 
-  private syntheticPrice(seedSource: string, dayIndex: number): number {
-    const base = 100;
-    const trend = dayIndex * 0.05;
-    const cycle = Math.sin(dayIndex / 7) * 2;
-    const noise = (this.seed(seedSource, dayIndex) - 0.5) * 1.5;
-    const price = base + trend + cycle + noise;
-    return Math.max(1, price);
-  }
-
   private shouldEnter(strategy: Strategy, dayIndex: number): boolean {
     const cadence = Math.max(3, strategy.entryRules.length * 2 + 3);
     return dayIndex % cadence === 0;
@@ -336,16 +344,6 @@ export class Simulator {
   private shouldExit(strategy: Strategy, dayIndex: number): boolean {
     const cadence = Math.max(4, strategy.exitRules.length * 2 + 4);
     return dayIndex % cadence === 0;
-  }
-
-  private seed(source: string, index: number): number {
-    let hash = 0;
-    const value = `${source}:${index}`;
-    for (let i = 0; i < value.length; i += 1) {
-      hash = (hash << 5) - hash + value.charCodeAt(i);
-      hash |= 0;
-    }
-    return (Math.abs(hash) % 10_000) / 10_000;
   }
 
   private createRunId(strategyId: string, startDate: string, endDate: string): string {

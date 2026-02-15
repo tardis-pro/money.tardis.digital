@@ -46,6 +46,8 @@ import { ChartGenerator } from "./services/mit/chart-generator.js";
 import { StockLinksService } from "./services/mit/stock-links.js";
 import { HistoricalAnalysisService } from "./services/mit/historical-analysis.js";
 
+const HISTORICAL_CANDLE_DAYS = 5000;
+
 const manualFundamentalSchema = z.object({
   ticker: z.string().min(1),
   snapshot: z.object({
@@ -712,11 +714,11 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
             const existingCandles = draft.candles[ticker] ?? [];
             const candles = existingCandles.length >= 220
               ? existingCandles
-              : await marketData.fetchCandles(ticker, 300).catch(() => existingCandles);
+              : await marketData.fetchCandles(ticker, HISTORICAL_CANDLE_DAYS).catch(() => existingCandles);
 
             if (candles.length === 0 && !screenipyRow) continue;
 
-            draft.candles[ticker] = candles.slice(-300);
+            draft.candles[ticker] = candles;
 
             const baseTechnicals = computeTechnicalSnapshot(ticker, candles);
             if (!baseTechnicals && !screenipyRow) continue;

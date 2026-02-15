@@ -24,7 +24,7 @@ export class MarketDataService {
     this.cookieExpiry = Date.now() + 25 * 60 * 1000;
   }
 
-  async fetchCandles(ticker: string, days: number = 300): Promise<DailyCandle[]> {
+  async fetchCandles(ticker: string, days: number = 5000): Promise<DailyCandle[]> {
     const normalizedTicker = sanitizeTicker(ticker);
     const cached = await this.readCache(normalizedTicker);
     if (cached.length >= days) {
@@ -32,9 +32,9 @@ export class MarketDataService {
     }
 
     const fresh = await this.fetchFromNse(normalizedTicker, days).catch(async () => this.fetchFromYahoo(normalizedTicker, days));
-    const merged = mergeCandles(cached, fresh).slice(-days);
+    const merged = mergeCandles(cached, fresh);
     await this.writeCache(normalizedTicker, merged);
-    return merged;
+    return merged.slice(-days);
   }
 
   async refreshUniverse(tickers: string[]): Promise<Map<string, DailyCandle[]>> {
@@ -81,7 +81,9 @@ export class MarketDataService {
 
   private async fetchFromYahoo(ticker: string, days: number): Promise<DailyCandle[]> {
     const symbol = `${ticker}.NS`;
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=2y&interval=1d`;
+    const period2 = Math.floor(Date.now() / 1000);
+    const period1 = period2 - Math.max(365, Math.floor(days)) * 24 * 60 * 60;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d&events=history`;
     const response = await fetch(url, {
       headers: { "user-agent": "Mozilla/5.0", accept: "application/json" },
     });
@@ -141,7 +143,7 @@ export class MarketDataService {
   private async writeCache(ticker: string, candles: DailyCandle[]): Promise<void> {
     await ensureDir(this.candlesDir);
     const file = path.join(this.candlesDir, `${sanitizeTicker(ticker)}.json`);
-    await writeFile(file, `${JSON.stringify(candles.slice(-300), null, 2)}\n`, "utf8");
+    await writeFile(file, `${JSON.stringify(candles, null, 2)}\n`, "utf8");
   }
 }
 
