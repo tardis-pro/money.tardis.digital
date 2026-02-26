@@ -129,6 +129,12 @@ const notableBackfillInputSchema = z.object({
   persist: z.boolean().optional(),
 });
 
+const watchlistCreateSchema = z.object({
+  name: z.string().min(2).max(80),
+  tickers: z.array(z.string().min(1).max(12)).min(1).max(50),
+});
+const watchlistUpdateSchema = watchlistCreateSchema;
+
 const realBackfillInputSchema = z.object({
   from: z.string().min(10).optional(),
   to: z.string().min(10).optional(),
@@ -659,6 +665,7 @@ async function buildServer() {
       payload: {
         ingested: result.ingested,
         producedSignals: result.producedSignals,
+        mirrorEnriched: result.mirrorEnriched,
         alertsCreated: result.alertsCreated,
       },
     });
@@ -677,6 +684,21 @@ async function buildServer() {
     }
     const user = await identity.requireUser(access.userId);
     return terminal.topSignals(parsed.data.limit ?? 25, user.sourceEntitlements);
+  });
+
+  app.delete("/api/signals", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) return access.response;
+    const clearedSignals = await store.clearSignals();
+    // Fire-and-forget pipeline re-ingest
+    void pipeline.run().catch((err: unknown) => {
+      console.error("Background reingest failed:", err instanceof Error ? err.message : err);
+    });
+    return reply.send({
+      clearedSignals,
+      reingestTriggered: true,
+      message: "Signals cleared. Re-ingest running in background.",
+    });
   });
 
   app.get("/api/heatmap", async (request, reply) => {
@@ -1335,6 +1357,35 @@ async function buildServer() {
       return access.response;
     }
     return terminal.watchlists();
+  });
+
+  app.post("/api/watchlists", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "watchlists");
+    if (!access.allowed) return access.response;
+    const parsed = watchlistCreateSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues });
+    const wl = await terminal.createWatchlist(parsed.data.name, parsed.data.tickers);
+    return reply.code(201).send(wl);
+  });
+
+  app.put("/api/watchlists/:watchlistId", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "watchlists");
+    if (!access.allowed) return access.response;
+    const { watchlistId } = request.params as { watchlistId: string };
+    const parsed = watchlistUpdateSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues });
+    const wl = await terminal.updateWatchlist(watchlistId, parsed.data.name, parsed.data.tickers);
+    if (!wl) return reply.code(404).send({ error: "Watchlist not found" });
+    return reply.send(wl);
+  });
+
+  app.delete("/api/watchlists/:watchlistId", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "watchlists");
+    if (!access.allowed) return access.response;
+    const { watchlistId } = request.params as { watchlistId: string };
+    const deleted = await terminal.deleteWatchlist(watchlistId);
+    if (!deleted) return reply.code(404).send({ error: "Watchlist not found" });
+    return reply.code(204).send();
   });
 
   app.post("/api/terminal/command", async (request, reply) => {

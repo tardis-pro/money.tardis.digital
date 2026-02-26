@@ -195,6 +195,48 @@ export interface RulebookEntry {
   explanation: string;
 }
 
+export interface BacktestRun {
+  id: string;
+  strategyId: string;
+  ticker: string;
+  startDate: string;
+  endDate: string;
+  backtestType: string;
+  createdAt: string;
+  payload: Record<string, unknown>;
+}
+
+export interface StoredGameExperiment {
+  id: string;
+  type: string;
+  status: string;
+  createdAt: string;
+  completedAt?: string;
+  payload: Record<string, unknown>;
+}
+
+export interface StoredPayoffMatrix {
+  id: string;
+  experimentId: string;
+  createdAt: string;
+  payload: Record<string, unknown>;
+}
+
+export interface StoredEvolutionHistory {
+  id: string;
+  experimentId: string;
+  generation: number;
+  createdAt: string;
+  payload: Record<string, unknown>;
+}
+
+export interface StoredNashEquilibrium {
+  id: string;
+  experimentId: string;
+  createdAt: string;
+  payload: Record<string, unknown>;
+}
+
 export class StrategyStore {
   private readonly pool: Pool;
 
@@ -496,6 +538,98 @@ export class StrategyStore {
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
       [key, JSON.stringify(value)],
     );
+  }
+
+  async createBacktestRun(run: BacktestRun): Promise<BacktestRun> {
+    await this.pool.query(
+      `INSERT INTO ${SCHEMA}.sim_runs (id, strategy_id, regime, created_at, payload) VALUES ($1, $2, $3, $4, $5)`,
+      [run.id, run.strategyId, null, run.createdAt, run],
+    );
+    return run;
+  }
+
+  async listBacktestRuns(filters?: { strategyId?: string; ticker?: string; backtestType?: string }): Promise<BacktestRun[]> {
+    const clauses: string[] = ["payload ? 'backtestType'"];
+    const values: unknown[] = [];
+    if (filters?.strategyId) {
+      values.push(filters.strategyId);
+      clauses.push(`strategy_id = $${values.length}`);
+    }
+    if (filters?.ticker) {
+      values.push(filters.ticker);
+      clauses.push(`payload->>'ticker' = $${values.length}`);
+    }
+    if (filters?.backtestType) {
+      values.push(filters.backtestType);
+      clauses.push(`payload->>'backtestType' = $${values.length}`);
+    }
+    const where = `WHERE ${clauses.join(" AND ")}`;
+    const result = await this.pool.query<{ payload: BacktestRun }>(
+      `SELECT payload FROM ${SCHEMA}.sim_runs ${where} ORDER BY created_at DESC`,
+      values,
+    );
+    return rowPayload(result.rows);
+  }
+
+  async getBacktestRun(id: string): Promise<BacktestRun | null> {
+    const result = await this.pool.query<{ payload: BacktestRun }>(
+      `SELECT payload FROM ${SCHEMA}.sim_runs WHERE id = $1`,
+      [id],
+    );
+    return result.rows[0]?.payload ?? null;
+  }
+
+  async getBacktestMetrics(filters?: { strategyId?: string; ticker?: string }): Promise<BacktestRun[]> {
+    const clauses: string[] = ["payload ? 'backtestType'"];
+    const values: unknown[] = [];
+    if (filters?.strategyId) {
+      values.push(filters.strategyId);
+      clauses.push(`strategy_id = $${values.length}`);
+    }
+    if (filters?.ticker) {
+      values.push(filters.ticker);
+      clauses.push(`payload->>'ticker' = $${values.length}`);
+    }
+    const where = `WHERE ${clauses.join(" AND ")}`;
+    const result = await this.pool.query<{ payload: BacktestRun }>(
+      `SELECT payload FROM ${SCHEMA}.sim_runs ${where} ORDER BY created_at DESC`,
+      values,
+    );
+    return rowPayload(result.rows);
+  }
+
+  async upsertGameExperiment(exp: StoredGameExperiment): Promise<StoredGameExperiment> {
+    await this.pool.query(
+      `INSERT INTO ${SCHEMA}.game_experiments (id, type, status, created_at, payload)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, payload = EXCLUDED.payload`,
+      [exp.id, exp.type, exp.status, exp.createdAt, exp.payload],
+    );
+    return exp;
+  }
+
+  async createPayoffMatrix(matrix: StoredPayoffMatrix): Promise<StoredPayoffMatrix> {
+    await this.pool.query(
+      `INSERT INTO ${SCHEMA}.payoff_matrices (id, experiment_id, created_at, payload) VALUES ($1, $2, $3, $4)`,
+      [matrix.id, matrix.experimentId, matrix.createdAt, matrix.payload],
+    );
+    return matrix;
+  }
+
+  async createEvolutionHistory(entry: StoredEvolutionHistory): Promise<StoredEvolutionHistory> {
+    await this.pool.query(
+      `INSERT INTO ${SCHEMA}.evolution_history (id, experiment_id, generation, created_at, payload) VALUES ($1, $2, $3, $4, $5)`,
+      [entry.id, entry.experimentId, entry.generation, entry.createdAt, entry.payload],
+    );
+    return entry;
+  }
+
+  async createNashEquilibrium(eq: StoredNashEquilibrium): Promise<StoredNashEquilibrium> {
+    await this.pool.query(
+      `INSERT INTO ${SCHEMA}.nash_equilibria (id, experiment_id, created_at, payload) VALUES ($1, $2, $3, $4)`,
+      [eq.id, eq.experimentId, eq.createdAt, eq.payload],
+    );
+    return eq;
   }
 
   async close(): Promise<void> {

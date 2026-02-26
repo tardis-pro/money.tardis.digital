@@ -585,4 +585,30 @@ export class PostgresStore implements Store {
     await this.write(state);
     return result;
   }
+
+  async upsertWatchlist(wl: Watchlist): Promise<Watchlist> {
+    await this.pool.query(
+      "INSERT INTO policy_signal.watchlists (id, payload) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload",
+      [wl.id, wl],
+    );
+    return wl;
+  }
+
+  async deleteWatchlistById(id: string): Promise<boolean> {
+    const result = await this.pool.query(
+      "DELETE FROM policy_signal.watchlists WHERE id = $1",
+      [id],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+
+  async clearSignals(): Promise<number> {
+    const countResult = await this.pool.query<{ count: string }>(
+      "SELECT count(*)::int AS count FROM policy_signal.signals"
+    );
+    const count = Number(countResult.rows[0]?.count ?? 0);
+    await this.pool.query("DELETE FROM policy_signal.signals");
+    return count;
+  }
 }

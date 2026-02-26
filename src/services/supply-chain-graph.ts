@@ -68,7 +68,7 @@ export class SupplyChainGraphService {
     const state = await this.store.read();
     
     // Load entities dynamically
-    const entities = await this.entityLoader.getAllEntities();
+    const { entities, source } = await this.entityLoader.getAllEntitiesWithSource();
     const entityLookup = entityByTicker(entities);
     const tickers = new Set<string>();
 
@@ -87,7 +87,7 @@ export class SupplyChainGraphService {
         // Fallback to all known entities
         for (const entity of entities) {
           tickers.add(entity.ticker);
-        }
+      }
       }
     }
 
@@ -231,6 +231,7 @@ export class SupplyChainGraphService {
       generatedAt: nowIso(),
       nodes,
       edges,
+      dataSource: source,
     };
   }
 }

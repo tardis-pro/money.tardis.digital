@@ -90,6 +90,15 @@ export interface Prediction {
   modelVersion: string;
 }
 
+export interface MirrorInsight {
+  headline: string;
+  summary: string;
+  narrative: { id: string; title: string };
+  impact: number;
+  bias: "left" | "right" | "neutral" | "nationalist";
+  confidence: number;
+}
+
 export interface SignalRecord {
   id: string;
   createdAt: string;
@@ -100,6 +109,7 @@ export interface SignalRecord {
   prediction: Prediction;
   score: number;
   status: "active" | "suppressed";
+  mirrorInsight?: MirrorInsight;
 }
 
 export type FeedbackLabel =
@@ -290,6 +300,7 @@ export interface SupplyChainGraph {
   generatedAt: string;
   nodes: SupplyChainNode[];
   edges: SupplyChainEdge[];
+  dataSource: 'live' | 'fallback';
 }
 
 export interface BackfillDashboard {

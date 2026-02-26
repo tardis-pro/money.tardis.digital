@@ -69,6 +69,9 @@ export interface Store {
   read(): Promise<StateStore>;
   write(state: StateStore): Promise<void>;
   transaction<T>(fn: (state: StateStore) => T): Promise<T>;
+  upsertWatchlist(wl: Watchlist): Promise<Watchlist>;
+  deleteWatchlistById(id: string): Promise<boolean>;
+  clearSignals(): Promise<number>;
 }
 
 function makeDefaultState(): StateStore {
@@ -253,5 +256,30 @@ export class JsonStore implements Store {
     const result = fn(state);
     await this.write(state);
     return result;
+  }
+
+  async upsertWatchlist(wl: Watchlist): Promise<Watchlist> {
+    return this.transaction((state) => {
+      const idx = state.watchlists.findIndex((w) => w.id === wl.id);
+      if (idx >= 0) state.watchlists[idx] = wl; else state.watchlists.push(wl);
+      return wl;
+    });
+  }
+
+  async deleteWatchlistById(id: string): Promise<boolean> {
+    return this.transaction((state) => {
+      const before = state.watchlists.length;
+      state.watchlists = state.watchlists.filter((w) => w.id !== id);
+      return state.watchlists.length < before;
+    });
+  }
+
+
+  async clearSignals(): Promise<number> {
+    return this.transaction((state) => {
+      const count = state.signals.length;
+      state.signals = [];
+      return count;
+    });
   }
 }

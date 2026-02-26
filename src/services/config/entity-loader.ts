@@ -409,6 +409,18 @@ export class EntityMetadataLoader extends BaseConfigurationLoader<Map<string, En
   }
 
   /**
+   * Get all entities with source info (live vs fallback)
+   */
+  async getAllEntitiesWithSource(): Promise<{ entities: EntityMetadata[]; source: 'live' | 'fallback' }> {
+    const result = await this.load();
+    const source = result.sourceId === 'fallback' ? 'fallback' : 'live';
+    return {
+      entities: Array.from(result.data.values()),
+      source,
+    };
+  }
+
+  /**
    * Find entities matching keywords
    */
   async findByKeywords(text: string): Promise<EntityMetadata[]> {

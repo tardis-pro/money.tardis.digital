@@ -961,7 +961,7 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
     const state = await deps.mitStore.read();
     const latest = [...state.dailyRuns].sort((a, b) => b.date.localeCompare(a.date))[0];
     if (!latest) {
-      return reply.code(404).send({ error: "No runs" });
+      return reply.code(404).send({ error: "No pipeline run found", remediation: "POST /api/mit/pipeline/run to generate daily ideas" });
     }
     return latest.ideas;
   });

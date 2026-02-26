@@ -1,4 +1,4 @@
-import type { CommandLogRecord, SectorHeatmapEntry, SignalRecord, TerminalRoute } from "../types.js";
+import type { CommandLogRecord, SectorHeatmapEntry, SignalRecord, TerminalRoute, Watchlist } from "../types.js";
 import type { Store } from "../store.js";
 import { makeId, nowIso } from "../utils.js";
 
@@ -80,6 +80,27 @@ export class TerminalService {
   async watchlists() {
     const state = await this.store.read();
     return state.watchlists;
+  }
+
+  async createWatchlist(name: string, tickers: string[]): Promise<Watchlist> {
+    const normalized = [...new Set(tickers.map((t) => t.trim().toUpperCase()))];
+    const wl: Watchlist = { id: makeId("wl"), name, tickers: normalized, createdAt: nowIso() };
+    await this.store.upsertWatchlist(wl);
+    return wl;
+  }
+
+  async updateWatchlist(id: string, name: string, tickers: string[]): Promise<Watchlist | null> {
+    const normalized = [...new Set(tickers.map((t) => t.trim().toUpperCase()))];
+    const state = await this.store.read();
+    const existing = state.watchlists.find((w) => w.id === id);
+    if (!existing) return null;
+    const updated: Watchlist = { ...existing, name, tickers: normalized };
+    await this.store.upsertWatchlist(updated);
+    return updated;
+  }
+
+  async deleteWatchlist(id: string): Promise<boolean> {
+    return this.store.deleteWatchlistById(id);
   }
 
   async signalsForWatchlist(watchlistId: string, allowedSources?: string[]): Promise<SignalRecord[]> {
