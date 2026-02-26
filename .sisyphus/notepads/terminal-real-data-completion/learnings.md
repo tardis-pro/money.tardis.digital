@@ -144,5 +144,73 @@ Use `'fresh' | 'stale' | 'never'` with 24h threshold and null guard:
 - `supply-chain-graph.ts` — returns nodes with `dataSource: "fallback"` when Screener fails, economics = 0
 - `entity-loader.ts` — returns `FALLBACK_ENTITIES` when Screener API unavailable
 - `screener-fundamentals-fetcher.ts` — returns `null` for invalid tickers, `failed` array in batch
-- Previous edit left a `<p>` tag outside the closing `</div>` — fixed by including the full block
 - Svelte doesn't error on malformed HTML, but it breaks the visual layout
+
+## T12: E2E Terminal Data Integrity Tests (2026-02-26)
+
+### Test file location and pattern
+- Test file: `test/terminal-integrity.test.ts` → compiled to `dist/test/terminal-integrity.test.js`
+- Uses Node.js native test runner: `import test, { before, after, describe } from "node:test"`
+- Uses `node:assert/strict` for assertions
+- Tests run via `npm run test` = `npm run build && node --test dist/test/*.test.js`
+
+### Building a test server for E2E tests
+- Use dynamic imports for all server modules (compiled to `../src/...` paths in dist)
+- Create temp directory with `mkdtemp(path.join(os.tmpdir(), "prefix-"))`
+- Instantiate `JsonStore` and `MitJsonStore` with temp paths
+- Create Fastify app with `logger: false` to reduce noise
+- Use ephemeral port: `await app.listen({ port: 0, host: "127.0.0.1" })`
+- Extract port from returned address: `address.replace(/.*:/, "")`
+
+### MIT routes authentication
+- MIT routes require `x-user-id` header for identity service
+- Default user is `demo-analyst` which has full route entitlements
+- Add hook to inject default user: `request.headers["x-user-id"] = "demo-analyst"`
+
+### Data-dependent route handling
+- Some routes return 404 when no data exists (e.g., `/api/mit/pipeline/latest`, `/api/mit/hero/analyze`)
+- 404 with `{ error: "..." }` body is valid behavior, NOT a route regression
+- Test should check for either 200 or 404 with proper error shape
+
+### Terminal panel endpoints (9 panels)
+1. Chat — uses `/api/mit/manager/query` (POST)
+2. Signals — `GET /api/signals?limit=20`
+3. Alerts — `GET /api/alerts`
+4. Portfolio — `GET /api/mit/portfolio`
+5. Heatmap — `GET /api/heatmap`
+6. Screener — `GET /api/mit/screenipy/candidates`
+7. Pipeline — `GET /api/mit/pipeline/latest`
+8. Hero — `GET /api/mit/hero/analyze`
+9. Trades — `GET /api/mit/trades`
+
+### Additional data endpoints
+- `GET /api/market/snapshots?limit=10` — Yahoo quotes
+- `GET /api/mit/data/sources` — historical data coverage
+- `GET /api/ingest/status` — policy ingestion freshness
+- `GET /api/chart/templates` — charting templates (NOT `/api/templates`)
+
+### Test cleanup gotcha
+- Node.js test runner may timeout on async cleanup (`app.close()` is slow)
+- Combine all tests into one describe block to avoid multiple server lifecycles
+- Use `after` hook with proper async/await for cleanup
+
+### Route regression detection pattern
+```typescript
+const requiredRoutes: Array<{ method: string; path: string; description: string; allow404?: boolean }> = [
+  { method: "GET", path: "/api/signals", description: "Signals panel" },
+  { method: "GET", path: "/api/mit/pipeline/latest", description: "Pipeline panel", allow404: true },
+  // ...
+];
+
+for (const route of requiredRoutes) {
+  test(`${route.method} ${route.path} is registered`, async () => {
+    const res = await fetch(`${baseUrl}${route.path}`);
+    if (route.allow404 && res.status === 404) {
+      const data = await res.json();
+      assert.ok("error" in data, "404 should have error body");
+    } else {
+      assert.notEqual(res.status, 404, "Route regression detected");
+    }
+  });
+}
+```

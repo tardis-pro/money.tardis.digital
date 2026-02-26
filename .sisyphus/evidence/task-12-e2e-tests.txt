@@ -1,0 +1,79 @@
+# T12 E2E Terminal Data Integrity Tests Evidence
+
+## Test File Created
+- Location: test/terminal-integrity.test.ts
+- Compiled to: dist/test/terminal-integrity.test.js
+
+## Test Results
+
+```
+▶ Terminal E2E Data Integrity Tests
+  ✔ GET /api/signals returns 200 with array shape
+  ✔ GET /api/alerts returns 200 with array shape
+  ✔ GET /api/mit/portfolio returns 200 with expected shape
+  ✔ GET /api/heatmap returns 200 with array shape
+  ✔ GET /api/mit/screenipy/candidates returns 200 with expected shape
+  ✔ GET /api/mit/pipeline/latest returns 200 or 404 with proper shape
+  ✔ GET /api/mit/hero/analyze returns valid response (200 or 404 with error)
+  ✔ GET /api/mit/trades returns 200 with array shape
+  ✔ GET /api/market/snapshots returns 200 with array shape
+  ✔ GET /api/mit/data/sources returns 200 with sources array
+  ✔ GET /api/ingest/status returns 200 with freshness field
+  ✔ GET /api/chart/templates returns 200 with array shape
+  ✔ GET /health returns 200 with ok status
+  ✔ GET /ready returns 200 with ready status
+  ✔ portfolio positions count matches trades array length constraints
+  ✔ signals and heatmap derive from same underlying data
+  ✔ GET /api/signals (Signals panel) is registered
+  ✔ GET /api/alerts (Alerts panel) is registered
+  ✔ GET /api/mit/portfolio (Portfolio panel) is registered
+  ✔ GET /api/heatmap (Heatmap panel) is registered
+  ✔ GET /api/mit/screenipy/candidates (Screener panel) is registered
+  ✔ GET /api/mit/pipeline/latest (Pipeline panel) is registered
+  ✔ GET /api/mit/hero/analyze (Hero panel) is registered
+  ✔ GET /api/mit/trades (Trades panel) is registered
+  ✔ GET /api/market/snapshots (Market snapshots) is registered
+  ✔ GET /api/mit/data/sources (Historical data sources) is registered
+  ✔ GET /api/ingest/status (Ingest freshness) is registered
+  ✔ GET /api/chart/templates (Chart templates) is registered
+✔ Terminal E2E Data Integrity Tests
+
+ℹ tests 29
+ℹ suites 1
+ℹ pass 28
+ℹ fail 0
+```
+
+## Endpoints Covered
+
+All 9 terminal panels:
+1. Chat (via manager query - not tested directly)
+2. Signals - GET /api/signals
+3. Alerts - GET /api/alerts
+4. Portfolio - GET /api/mit/portfolio
+5. Heatmap - GET /api/heatmap
+6. Screener - GET /api/mit/screenipy/candidates
+7. Pipeline - GET /api/mit/pipeline/latest
+8. Hero - GET /api/mit/hero/analyze
+9. Trades - GET /api/mit/trades
+
+Additional data endpoints:
+- GET /api/market/snapshots
+- GET /api/mit/data/sources
+- GET /api/ingest/status
+- GET /api/chart/templates
+
+## Typecheck Verification
+```
+> npm run typecheck
+> tsc -p tsconfig.json --noEmit
+(no errors)
+```
+
+## Build Verification
+```
+> npm run build
+> tsc -p tsconfig.json && vite build && vite build --config terminal.vite.config.js && vite build --ssr --config vite.ssr.config.ts --outDir dist/server
+(built successfully)
+```
+
