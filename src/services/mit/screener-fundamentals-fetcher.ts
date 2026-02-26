@@ -6,6 +6,21 @@
 
 import type { FundamentalSnapshot } from "../../mit-types.js";
 
+/** Retry with exponential backoff + jitter (1s, 2s, 4s base delays). */
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === maxRetries) throw err;
+      const delay = Math.pow(2, attempt) * 1000 + Math.random() * 500;
+      console.warn(`[rate-limit] screener-fetcher retry ${attempt + 1}/${maxRetries} after ${Math.round(delay)}ms`);
+      await new Promise<void>(r => setTimeout(r, delay));
+    }
+  }
+  throw new Error('unreachable');
+}
+
 export interface ScreenerFundamentalsData {
   ticker: string;
   roce: number | null;
@@ -61,6 +76,10 @@ export class ScreenerFundamentalsFetcher {
       console.warn(`[screener-fetcher] No data found for ticker ${ticker} from Screener.in`);
       return null;
     } catch (error) {
+      // Re-throw rate-limit errors so caller can retry with backoff
+      if (error instanceof Error && error.message === 'rate-limit-429') {
+        throw error;
+      }
       console.error(`[screener-fetcher] Failed to fetch ${ticker} from Screener.in:`, error);
       return null;
     }
@@ -74,14 +93,18 @@ export class ScreenerFundamentalsFetcher {
     const failed: Array<{ ticker: string; error: string }> = [];
 
     for (const ticker of tickers) {
-      const data = await this.fetchTicker(ticker);
-      if (data) {
-        success.push(data);
-      } else {
-        failed.push({ ticker, error: "No data available from Screener.in" });
+      try {
+        const data = await withRetry(() => this.fetchTicker(ticker));
+        if (data) {
+          success.push(data);
+        } else {
+          failed.push({ ticker, error: "No data available from Screener.in" });
+        }
+      } catch (error) {
+        failed.push({ ticker, error: error instanceof Error ? error.message : 'Unknown error' });
       }
-      // Rate limiting: respect Screener.in API
-      await this.sleep(500);
+      // Jittered delay to respect Screener.in rate limits
+      await this.sleep(500 + Math.random() * 300);
     }
 
     console.log(`[screener-fetcher] Fetched ${success.length} tickers, ${failed.length} failed`);
@@ -103,6 +126,11 @@ export class ScreenerFundamentalsFetcher {
         },
         signal: AbortSignal.timeout(10000),
       });
+
+      if (searchResponse.status === 429) {
+        console.warn(`[rate-limit] 429 received from Screener.in search for ${ticker}`);
+        throw new Error('rate-limit-429');
+      }
 
       if (!searchResponse.ok) {
         return null;
@@ -137,6 +165,11 @@ export class ScreenerFundamentalsFetcher {
       },
       signal: AbortSignal.timeout(10000),
     });
+    if (response.status === 429) {
+      console.warn(`[rate-limit] 429 received from Screener.in page for ${ticker}`);
+      throw new Error('rate-limit-429');
+    }
+
     if (!response.ok) {
       return null;
     }

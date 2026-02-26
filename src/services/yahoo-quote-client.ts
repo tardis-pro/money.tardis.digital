@@ -21,18 +21,40 @@ export interface QuoteBatchResult {
 
 const YAHOO_QUOTE_URL = "https://query1.finance.yahoo.com/v7/finance/quote";
 
+/** Retry with exponential backoff + jitter (1s, 2s, 4s base delays). */
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === maxRetries) throw err;
+      const delay = Math.pow(2, attempt) * 1000 + Math.random() * 500;
+      console.warn(`[rate-limit] yahoo-quote retry ${attempt + 1}/${maxRetries} after ${Math.round(delay)}ms`);
+      await new Promise<void>(r => setTimeout(r, delay));
+    }
+  }
+  throw new Error('unreachable');
+}
+
 export async function fetchQuotes(tickers: string[]): Promise<QuoteBatchResult> {
   const symbols = tickers.map(t => `${t.toUpperCase()}.NS`).join(",");
   const fetchedAt = new Date().toISOString();
 
   try {
     const url = `${YAHOO_QUOTE_URL}?symbols=${encodeURIComponent(symbols)}&fields=regularMarketPrice,regularMarketChangePercent,regularMarketTime,quoteType,marketState`;
-    const response = await fetch(url, {
-      headers: {
-        "user-agent": "Mozilla/5.0",
-        "accept": "application/json"
-      },
-      signal: AbortSignal.timeout(10000),
+    const response = await withRetry(async () => {
+      const r = await fetch(url, {
+        headers: {
+          "user-agent": "Mozilla/5.0",
+          "accept": "application/json"
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (r.status === 429) {
+        console.warn('[rate-limit] Yahoo Finance returned 429, will retry with backoff');
+        throw new Error('rate-limit-429');
+      }
+      return r;
     });
 
     if (!response.ok) {

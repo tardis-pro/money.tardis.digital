@@ -65,6 +65,38 @@ const PSU_MINISTRY_MAP: Record<string, string[]> = {
 };
 
 // Screener.in API Source
+// --- Rate-limiting helpers (inline, no external deps) ---
+
+/** Simple chunked concurrency limiter — processes items in batches of `limit`. */
+async function withConcurrency<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<unknown>
+): Promise<void> {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += limit) {
+    chunks.push(items.slice(i, i + limit));
+  }
+  for (const chunk of chunks) {
+    await Promise.all(chunk.map(fn));
+  }
+}
+
+/** Retry with exponential backoff + jitter (1s, 2s, 4s base delays). */
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === maxRetries) throw err;
+      const delay = Math.pow(2, attempt) * 1000 + Math.random() * 500;
+      console.warn(`[rate-limit] entity-loader retry ${attempt + 1}/${maxRetries} after ${Math.round(delay)}ms`);
+      await new Promise<void>(r => setTimeout(r, delay));
+    }
+  }
+  throw new Error('unreachable');
+}
+
 class ScreenerEntitySource implements ConfigurationSource<Map<string, EntityMetadata>> {
   id = 'screener-api';
   name = 'Screener.in API';
@@ -97,10 +129,10 @@ class ScreenerEntitySource implements ConfigurationSource<Map<string, EntityMeta
   async fetch(): Promise<Map<string, EntityMetadata>> {
     const entities = new Map<string, EntityMetadata>();
 
-    for (const ticker of this.knownTickers) {
+    await withConcurrency(this.knownTickers, 5, async (ticker) => {
       const fallback = FALLBACK_ENTITIES.get(ticker);
       try {
-        const entity = await this.fetchEntityFromSearch(ticker, fallback ?? null);
+        const entity = await withRetry(() => this.fetchEntityFromSearch(ticker, fallback ?? null));
         entities.set(ticker, entity);
       } catch (error) {
         if (fallback) {
@@ -108,13 +140,12 @@ class ScreenerEntitySource implements ConfigurationSource<Map<string, EntityMeta
         }
         console.warn(`Failed to fetch entity ${ticker}: ${error}`);
       }
-      // Rate limit to respect API
-      await this.sleep(400);
-    }
+      // Jittered per-ticker delay to respect API rate limits
+      await this.sleep(400 + Math.random() * 200);
+    });
 
     return entities;
   }
-
   private async fetchEntityFromSearch(ticker: string, fallback: EntityMetadata | null): Promise<EntityMetadata> {
     const response = await fetch(`${this.searchUrl}/?q=${encodeURIComponent(ticker)}`, {
       method: 'GET',
@@ -124,6 +155,11 @@ class ScreenerEntitySource implements ConfigurationSource<Map<string, EntityMeta
       },
       signal: AbortSignal.timeout(10000)
     });
+
+    if (response.status === 429) {
+      console.warn(`[rate-limit] 429 received from Screener search for ${ticker}`);
+      throw new Error('rate-limit-429');
+    }
 
     if (!response.ok) {
       if (fallback) {

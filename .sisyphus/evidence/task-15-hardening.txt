@@ -1,0 +1,33 @@
+T15 - Performance and rate-limit hardening
+==========================================
+Date: 2026-02-26
+
+## Changes Made
+
+### 1. src/services/config/entity-loader.ts
+- Added `withConcurrency<T>(items, limit, fn)` inline helper — processes 52 tickers in batches of 5
+- Added `withRetry<T>(fn, maxRetries=3)` inline helper — exponential backoff 1s/2s/4s + jitter
+- Replaced sequential `for` loop in `ScreenerEntitySource.fetch()` with `withConcurrency(..., 5, ...)`
+- Each ticker now calls `withRetry(() => fetchEntityFromSearch(...))` in the concurrency batch
+- Added jitter to per-ticker delay: `400 + Math.random() * 200` ms
+- Added 429 detection in `fetchEntityFromSearch`: throws `rate-limit-429` error to trigger retry
+
+### 2. src/services/mit/screener-fundamentals-fetcher.ts
+- Added `withRetry<T>(fn, maxRetries=3)` inline helper
+- Modified `fetchTicker()` catch block to re-throw `rate-limit-429` errors (propagates to caller)
+- Modified `fetchTickers()` loop to wrap each call with `withRetry(() => this.fetchTicker(ticker))`
+- Added jitter to per-ticker delay: `500 + Math.random() * 300` ms (was fixed 500ms)
+- Added 429 detection in `searchAndFetch()`: throws `rate-limit-429`
+- Added 429 detection in `fetchAndParseCompanyPage()`: throws `rate-limit-429`
+
+### 3. src/services/yahoo-quote-client.ts
+- Added `withRetry<T>(fn, maxRetries=3)` inline helper
+- Wrapped the single `fetch()` call in `withRetry()` with 429 detection
+- Each retry creates a fresh `AbortSignal.timeout(10000)` (no stale signal issues)
+- All `[rate-limit]` prefix log messages for observability
+
+## Verification
+- `npm run typecheck` exits 0 ✓
+- No new npm dependencies added ✓
+- Public APIs unchanged ✓
+- Existing throttling protections preserved and enhanced with jitter ✓

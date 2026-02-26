@@ -214,3 +214,30 @@ for (const route of requiredRoutes) {
   });
 }
 ```
+
+## T15 — Concurrency caps + 429 retry/backoff (2026-02-26)
+
+### Pattern: Inline rate-limit helpers (no deps)
+- Used `withConcurrency<T>(items, limit, fn)` for chunked batch concurrency (max 5 at a time)
+- Used `withRetry<T>(fn, maxRetries=3)` for exponential backoff + jitter on 429s
+- Pattern: `Math.pow(2, attempt) * 1000 + Math.random() * 500` for jitter delays
+- All log messages use `[rate-limit]` prefix for grep-ability
+
+### Edit tool pitfall: missing method-close braces
+- When replacing a range that ends at a method's last line (catch close), the method's OWN closing `}` can get swallowed
+- Fix: always verify the next line after replacement still has the right nesting
+- If replacing lines N through M, check that M+1 still has its own structural close
+
+### 429 detection pattern (no public API changes)
+- In fetch callers: check `response.status === 429` → throw `'rate-limit-429'`
+- In intermediate methods: re-throw `rate-limit-429` from catch blocks
+- Retry wrapper catches ANY thrown error and backs off; final throw lets caller fall back to cache
+
+### yahoo-quote-client.ts note
+- Single batch endpoint, wrap the fetch itself in `withRetry` lambda
+- Each retry creates a FRESH `AbortSignal.timeout()` — don't reuse same signal across retries
+
+### Jitter in delays
+- All existing 400ms and 500ms delays upgraded to jittered: `base + Math.random() * range`
+- entity-loader: 400 + Math.random() * 200 (400–600ms)
+- screener-fetcher: 500 + Math.random() * 300 (500–800ms)
