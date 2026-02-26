@@ -241,3 +241,32 @@ for (const route of requiredRoutes) {
 - All existing 400ms and 500ms delays upgraded to jittered: `base + Math.random() * range`
 - entity-loader: 400 + Math.random() * 200 (400–600ms)
 - screener-fetcher: 500 + Math.random() * 300 (500–800ms)
+
+## Task 16: Operator Runbook (2026-02-26)
+
+### Key Findings
+
+1. **Pipeline idempotency**: MIT pipeline is date-locked. Running it multiple times on the same day returns `already_completed` status. This prevents duplicate processing.
+
+2. **Scheduler cron times in docker-compose.yml**:
+   - `0 3 * * 1-5` = 03:00 IST weekdays
+   - `30 4 * * 1-5` = 04:30 IST weekdays
+   - `0 2 * * 0` = 02:00 IST Sundays
+   - `30 0 * * *` = 00:30 IST daily (NOT 06:00 as might be assumed)
+
+3. **Fallback chain for data sources**:
+   - NSE API → Yahoo Finance → Cached candles
+   - Screener.in → Minimal fallback entities (zero economics)
+   - Redis → In-memory mutex for single-instance
+
+4. **Yahoo Finance delay for NSE**: ~15 minutes. Critical for intraday decisions. System has `MIT_INTRADAY_REFRESH_SLOTS` for scheduled price updates during market hours.
+
+5. **Health check endpoints hierarchy**:
+   - `/health` = server alive
+   - `/ready` = store connected
+   - `/api/ingest/status` = policy ingestion freshness
+   - `/api/mit/screener/health` = Screener.in reachability
+   - `/api/mit/data/sources` = historical data coverage
+
+### Pattern: Graceful Degradation
+All external data fetches should return `dataSource` field indicating whether data came from live source or fallback. This pattern enables operators to quickly identify degraded mode.

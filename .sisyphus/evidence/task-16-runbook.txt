@@ -1,0 +1,67 @@
+TASK 16: Operator Runbook and Release Readiness Notes
+======================================================
+
+COMPLETED: 2026-02-26
+
+## Changes Made
+
+Added comprehensive "Operator Runbook" section to README.md covering:
+
+1. **Live Data Mode**
+   - How to verify data freshness via `/api/ingest/status`
+   - Check data source coverage via `/api/mit/data/sources`
+   - Explanation of `dataSource` field in responses
+
+2. **Delayed Quote Caveat**
+   - Yahoo Finance quotes are ~15 minutes delayed for NSE stocks
+   - Affects technicals, entry/exit plans, and P&L refresh
+   - `MIT_INTRADAY_REFRESH_SLOTS` environment variable documented
+
+3. **Pipeline Commands**
+   - `POST /api/mit/pipeline/run` - Full MIT trading pipeline
+   - `POST /api/ingest/run` - Policy signal ingestion
+   - `POST /api/mit/fundamentals/refresh` - Fundamentals refresh
+   - `npm run seed:strategies` - Strategy template seeding
+
+4. **Health Checks**
+   - `/health` - Liveness
+   - `/ready` - Readiness
+   - `/api/mit/screener/health` - Screener health
+   - `/api/ingest/status` - Ingestion status
+   - `/api/mit/data/sources` - Data source coverage
+
+5. **Outage Modes and Fallback Behavior**
+   - Yahoo Finance down: fallback to cached data
+   - Screener.in down: minimal fallback entities
+   - NSE API down: fallback to Yahoo
+   - Redis unavailable: in-memory mutex fallback
+
+6. **Automated Scheduler (Docker Compose)**
+   - 03:00 IST Mon-Fri: MIT pipeline
+   - 04:30 IST Mon-Fri: P&L refresh
+   - 02:00 IST Sunday: Fundamentals refresh
+   - 00:30 IST Daily: Policy ingest
+
+7. **Strategy Templates**
+   - `GET /api/templates` - All 9 templates
+   - `GET /api/templates/:id` - Individual template
+
+8. **Troubleshooting**
+   - Pipeline stuck in running state
+   - Empty ideas after pipeline run
+   - Stale signals
+   - Fundamentals not refreshing
+   - Redis connection errors
+
+## Verification
+
+- `npm run typecheck` exits 0
+- All documented endpoints verified against actual code:
+  - `/api/mit/data/sources` in mit-routes.ts:1643
+  - `/api/mit/screener/health` in mit-routes.ts:1730
+  - `/api/ingest/status` in server.ts:682
+  - `/api/templates` in services/strategy-ai/routes.ts:185
+
+## Commit Message
+
+docs(ops): add operator runbook and release readiness notes
