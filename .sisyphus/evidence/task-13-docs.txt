@@ -1,0 +1,34 @@
+TASK 13: Historical Data UX/Docs Integration
+=============================================
+
+CHANGES MADE:
+
+1. src/terminal/App.svelte (lines 408-414)
+   - Added historical data guidance to welcome/help panel
+   - New line: "Historical data: GET /api/mit/data/sources — see cache paths and coverage"
+   - Fixed malformed HTML where previous line was outside the help div
+
+2. README.md (new section after "What It Does")
+   - Added "## Historical Data" section
+   - Includes:
+     * How to check data sources: curl http://localhost:3000/api/mit/data/sources
+     * Where candles are cached: data/mit-candles/{TICKER}.json
+     * How to fetch historical data: POST /api/mit/pipeline/run
+     * How to refresh fundamentals: GET /api/mit/fundamentals/refresh
+     * How to check screener health: GET /api/mit/screener/health
+
+VERIFICATION:
+- npm run typecheck: PASSED (exit code 0)
+
+KEY ENDPOINTS DOCUMENTED:
+- GET /api/mit/data/sources — returns sources, coverage, cache paths, and howToFetchHistoricalData
+- POST /api/mit/pipeline/run — fetches candles + fundamentals for all 52 universe tickers
+- GET /api/mit/fundamentals/refresh — refreshes fundamentals from Screener.in/Yahoo
+- GET /api/mit/screener/health — checks entity loader availability and cache status
+
+DATA SOURCES COVERED:
+- Yahoo Finance (ohlcv-candles, free, 15min delay)
+- NSE India API (ohlcv-candles, free, 5min delay, cookie-based auth)
+- Screener.in (fundamentals, free, daily)
+- Yahoo Finance Financials (fundamentals, free, daily)
+- Google News RSS (news, free, real-time)

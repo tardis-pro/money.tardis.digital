@@ -70,3 +70,45 @@
 ### Cleanup
 - Removed unused `incoming`/`outgoingScore` maps (were only used by synthetic formula)
 - Removed unused `source` from entity loader destructuring
+
+## T11 — Policy ingestion scheduling + freshness metadata (2026-02-26)
+
+### Pattern: Extending StateStore with scalar metadata
+When adding lightweight metadata (timestamps, counters) to the store:
+1. Add field with explicit `null` type to `StateStore` interface — `exactOptionalPropertyTypes` requires `string | null`, not `string?`
+2. Add to `makeDefaultState()` with null default
+3. Add to `JsonStore.read()` return with `?? null` fallback
+4. For `PostgresStore`: the `stream_state` singleton table stores arbitrary scalar state alongside `streamSequence` — extend its payload type and both read/write paths
+5. In routes, use `store.transaction()` to atomically update the new fields
+
+### Pattern: Docker cron IST times
+- IST = UTC+5:30 → subtract 5h30m for UTC cron time
+- 6:00 AM IST = 00:30 UTC → `30 0 * * *`
+- 3:00 AM IST = 21:30 UTC (previous day) but existing MIT uses `0 3 * * 1-5` (3am IST directly because TZ=Asia/Kolkata is set in env)
+- The scheduler container sets `TZ: Asia/Kolkata` via `cp /usr/share/zoneinfo/$$TZ /etc/localtime`, so cron times ARE in IST
+
+### Pattern: Freshness status enum
+Use `'fresh' | 'stale' | 'never'` with 24h threshold and null guard:
+- `never`: lastSuccess === null
+- `fresh`: Date.now() - new Date(lastSuccess).getTime() <= 24 * 3600 * 1000
+- `stale`: otherwise
+
+## T13: Historical Data UX/Docs Integration
+
+**App.svelte welcome panel structure:**
+- Help text is in a `<div class="text-xs text-[#555] space-y-1">` block
+- Lines 408-414 after the edit
+- Each command is a `<p>` with `<span class="text-orange-500">>` prefix
+
+**README section ordering:**
+- "Historical Data" section added after "What It Does" (before "Architecture")
+- Structure: description, code block with curl command, explanation, repeat
+
+**Key endpoints for users:**
+- `GET /api/mit/data/sources` — comprehensive source info including cache paths and howToFetchHistoricalData steps
+- `POST /api/mit/pipeline/run` — full historical fetch for all 52 tickers
+- Data cached in `data/mit-candles/{TICKER}.json` (13+ years)
+
+**HTML structure gotcha:**
+- Previous edit left a `<p>` tag outside the closing `</div>` — fixed by including the full block
+- Svelte doesn't error on malformed HTML, but it breaks the visual layout

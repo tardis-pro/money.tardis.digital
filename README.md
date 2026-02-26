@@ -62,6 +62,38 @@ npm run dev
 | **Alert System** | Threshold-based alerts with cooldown, routing, and quality metrics |
 | **Backfill Engine** | Historical data replay with checkpointing and reconciliation |
 
+## Historical Data
+
+The MIT trading system caches 13+ years of OHLCV candle data locally.
+
+**Check data sources and coverage:**
+
+```bash
+curl http://localhost:3000/api/mit/data/sources
+```
+
+Returns all data sources (Yahoo Finance, NSE India, Screener.in), cache paths, and date ranges.
+
+**Fetch historical data for all 52 universe tickers:**
+
+```bash
+curl -X POST http://localhost:3000/api/mit/pipeline/run
+```
+
+Candles are cached in `data/mit-candles/{TICKER}.json`.
+
+**Refresh fundamentals:**
+
+```bash
+curl http://localhost:3000/api/mit/fundamentals/refresh
+```
+
+**Check screener health:**
+
+```bash
+curl http://localhost:3000/api/mit/screener/health
+```
+
 ## Architecture
 
 ```

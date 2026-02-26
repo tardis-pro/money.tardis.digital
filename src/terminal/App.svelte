@@ -407,11 +407,11 @@
             <p class="text-xs text-[#666] mb-3">AI-powered command center. Natural language control.</p>
             <div class="text-xs text-[#555] space-y-1">
               <p><span class="text-orange-500">></span> "analyze RELIANCE" - AI stock analysis</p>
-              <p><span class="text-orange-500">></span> "show portfolio" / "run pipeline"</p>
+              <p><span class="text-orange-500">></span> "show portfolio" / "run pipeline" / "run screener"</p>
               <p><span class="text-orange-500">></span> Press <span class="text-white">1-8</span> switch panels</p>
               <p><span class="text-orange-500">></span> "help" - all commands</p>
+              <p><span class="text-orange-500">></span> Historical data: <span class="text-white">GET /api/mit/data/sources</span> — see cache paths and coverage</p>
             </div>
-              <p><span class="text-orange-500">></span> "show heatmap" / "run screener" / historical data: POST /api/mit/pipeline/run</p>
           </div>
           
           <!-- Messages -->
