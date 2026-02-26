@@ -44,3 +44,29 @@
 - Helper functions (compactEnter, compactExit, etc.) live AFTER the closing `}` of registerMitRoutes
 - `noUncheckedIndexedAccess` strict mode requires checking array[0] !== undefined before accessing
 - Terminal App.svelte welcome message is in lines 407-413 (the `<div class="text-xs text-[#555] space-y-1">` block)
+
+## Task: T6 — Supply-chain real economics integration
+
+### Changes made
+- Updated `SupplyChainNode` type in `types.ts` to add `dataSource` and `asOf` fields
+- Updated `SupplyChainGraph.dataSource` to include `'cached'` option (was just `'live' | 'fallback'`)
+- Replaced synthetic formula in `supply-chain-graph.ts` with fundamentals-based calculations:
+  - `production` → latest annual revenue from `revenueHistory`
+  - `demand` → revenue * (1 + revenueGrowth) for forward estimate
+  - `surplus` → latest FCF from `fcfHistory`
+  - `imports/exports` → derived from surplus sign (negative = imports, positive = exports)
+
+### Data source tracking
+- `dataSource: 'live'` — fetched within last hour from Screener.in
+- `dataSource: 'cached'` — fetched more than an hour ago
+- `dataSource: 'fallback'` — no fundamentals available (zeros/nulls)
+
+### Key implementation notes
+- `ScreenerFundamentalsFetcher.fetchTickers()` returns both `success` and `failed` arrays
+- Rate limiting: 500ms delay between fetches (handled by fetcher)
+- `noUncheckedIndexedAccess` requires checking `array[0]` before accessing (use `?? 0` for revenue/fcf defaults)
+- Graph-level `dataSource` is derived from node-level sources (all live → live, some → cached, none → fallback)
+
+### Cleanup
+- Removed unused `incoming`/`outgoingScore` maps (were only used by synthetic formula)
+- Removed unused `source` from entity loader destructuring

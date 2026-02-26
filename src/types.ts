@@ -271,16 +271,20 @@ export interface Watchlist {
 }
 
 export interface SupplyChainNode {
-  ticker: string;
-  sector: string;
-  businessGroup: string;
-  ministry: string | null;
-  importance: number;
-  production: number;
-  demand: number;
-  imports: number;
-  exports: number;
+ticker: string;
+sector: string;
+businessGroup: string;
+ministry: string | null;
+importance: number;
+production: number;
+demand: number;
+imports: number;
+exports: number;
   surplus: number;
+  /** Source of economics data: 'live' from Screener, 'cached' from previous fetch, 'fallback' when unavailable */
+  dataSource: 'live' | 'cached' | 'fallback';
+  /** ISO timestamp when the data was fetched */
+  asOf: string;
 }
 
 export type SupplyChainRelation = "direct" | "indirect";
@@ -300,7 +304,7 @@ export interface SupplyChainGraph {
   generatedAt: string;
   nodes: SupplyChainNode[];
   edges: SupplyChainEdge[];
-  dataSource: 'live' | 'fallback';
+  dataSource: 'live' | 'cached' | 'fallback';
 }
 
 export interface BackfillDashboard {

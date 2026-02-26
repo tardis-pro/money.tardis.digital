@@ -4,7 +4,7 @@ import type { SupplyChainEdge, SupplyChainGraph, SupplyChainNode } from "../type
 import { clamp, nowIso } from "../utils.js";
 import { getEntityLoader } from "./config/entity-loader.js";
 import type { EntityMetadata } from "./config/entity-loader.js";
-
+import { getScreenerFetcher, type ScreenerFundamentalsData } from "./mit/screener-fundamentals-fetcher.js";
 interface EdgeConfig {
   from: string;
   to: string;
@@ -59,6 +59,85 @@ function htsPropagation(
   return clamp(score, 0, 1);
 }
 
+/** Node economics derived from real fundamentals data */
+interface NodeEconomics {
+  production: number;
+  demand: number;
+  imports: number;
+  exports: number;
+  surplus: number;
+  dataSource: 'live' | 'cached' | 'fallback';
+  asOf: string;
+}
+
+/**
+ * Extract node economics from Screener fundamentals data.
+ * Maps financial metrics to supply chain node economics:
+ * - production: latest annual revenue (in crores)
+ * - demand: revenue * (1 + revenueGrowth) for forward estimate
+ * - surplus: free cash flow (from fcfHistory)
+ * - imports/exports: derived from surplus sign (negative surplus = imports needed)
+ */
+function extractEconomicsFromFundamentals(
+  fundamentals: ScreenerFundamentalsData | null
+): NodeEconomics {
+  const fallbackAsOf = nowIso();
+  
+  if (!fundamentals) {
+    // No fundamentals available - use explicit fallback with zeros
+    return {
+      production: 0,
+      demand: 0,
+      imports: 0,
+      exports: 0,
+      surplus: 0,
+      dataSource: 'fallback',
+      asOf: fallbackAsOf,
+    };
+  }
+  
+  // Get latest revenue from history (sorted by FY)
+  const revenueHistory = [...fundamentals.revenueHistory].sort((a, b) => b.fy.localeCompare(a.fy));
+  const latestRevenue = revenueHistory[0]?.value ?? 0;
+  
+  // Calculate revenue growth for demand estimation
+  const prevRevenue = revenueHistory[1]?.value;
+  const revenueGrowth = prevRevenue !== undefined && prevRevenue > 0 
+    ? (latestRevenue - prevRevenue) / prevRevenue 
+    : 0;
+  
+  // Demand is forward-looking estimate based on growth
+  const demand = latestRevenue * (1 + revenueGrowth);
+  
+  // Get latest FCF from history
+  const fcfHistory = [...fundamentals.fcfHistory].sort((a, b) => b.fy.localeCompare(a.fy));
+  const latestFcf = fcfHistory[0]?.value ?? 0;
+  
+  // Production is current revenue, surplus is FCF
+  const production = latestRevenue;
+  const surplus = latestFcf;
+  
+  // Imports when FCF is negative (company needs external funding/supply)
+  // Exports when FCF is positive (company generates excess cash)
+  const imports = surplus < 0 ? Math.abs(surplus) : 0;
+  const exports = surplus > 0 ? surplus : 0;
+  
+  // Determine data source based on fetch time
+  const fetchTime = new Date(fundamentals.fetchedAt).getTime();
+  const oneHourAgo = Date.now() - 60 * 60 * 1000;
+  const dataSource: 'live' | 'cached' | 'fallback' = fetchTime > oneHourAgo ? 'live' : 'cached';
+  
+  return {
+    production: Number(production.toFixed(2)),
+    demand: Number(demand.toFixed(2)),
+    imports: Number(imports.toFixed(2)),
+    exports: Number(exports.toFixed(2)),
+    surplus: Number(surplus.toFixed(2)),
+    dataSource,
+    asOf: fundamentals.fetchedAt,
+  };
+}
+
 export class SupplyChainGraphService {
   private entityLoader = getEntityLoader();
 
@@ -68,7 +147,7 @@ export class SupplyChainGraphService {
     const state = await this.store.read();
     
     // Load entities dynamically
-    const { entities, source } = await this.entityLoader.getAllEntitiesWithSource();
+    const { entities } = await this.entityLoader.getAllEntitiesWithSource();
     const entityLookup = entityByTicker(entities);
     const tickers = new Set<string>();
 
@@ -118,6 +197,32 @@ export class SupplyChainGraphService {
           importance: clamp(rawImportance, 0.2, 1),
         };
       });
+
+    // Fetch fundamentals for all tickers to get real economics data
+    const fetcher = getScreenerFetcher();
+    const tickerList = baseNodes.map((n) => n.ticker);
+    console.log(`[supply-chain] Fetching fundamentals for ${tickerList.length} tickers...`);
+    
+    const fundamentalsResult = await fetcher.fetchTickers(tickerList);
+    const fundamentalsMap = new Map<string, ScreenerFundamentalsData | null>();
+    
+    for (const f of fundamentalsResult.success) {
+      fundamentalsMap.set(f.ticker, f);
+    }
+    for (const failed of fundamentalsResult.failed) {
+      fundamentalsMap.set(failed.ticker.toUpperCase(), null);
+      console.warn(`[supply-chain] Failed to fetch fundamentals for ${failed.ticker}: ${failed.error}`);
+    }
+    
+    // Track overall data source for the graph
+    const liveCount = fundamentalsResult.success.filter((f) => {
+      const fetchTime = new Date(f.fetchedAt).getTime();
+      return fetchTime > Date.now() - 60 * 60 * 1000;
+    }).length;
+    const graphDataSource: 'live' | 'cached' | 'fallback' = 
+      liveCount === tickerList.length ? 'live' :
+      fundamentalsResult.success.length > 0 ? 'cached' : 
+      'fallback';
 
     const nodeMap = new Map(baseNodes.map((node) => [node.ticker, node]));
     const directEdges: SupplyChainEdge[] = [];
@@ -201,28 +306,21 @@ export class SupplyChainGraphService {
       .sort((a, b) => b.propagationScore - a.propagationScore)
       .slice(0, 80);
 
-    const incoming = new Map<string, number>();
-    const outgoingScore = new Map<string, number>();
-    for (const edge of edges) {
-      const score = edge.propagationScore * edge.confidence;
-      incoming.set(edge.to, (incoming.get(edge.to) ?? 0) + score);
-      outgoingScore.set(edge.from, (outgoingScore.get(edge.from) ?? 0) + score);
-    }
-
     const nodes: SupplyChainNode[] = baseNodes
       .map((node) => {
-        const out = outgoingScore.get(node.ticker) ?? 0;
-        const inc = incoming.get(node.ticker) ?? 0;
-        const production = node.importance * 120 + out * 85;
-        const demand = node.importance * 82 + inc * 90;
-        const surplus = production - demand;
+        // Get fundamentals for this ticker and extract real economics
+        const fundamentals = fundamentalsMap.get(node.ticker) ?? null;
+        const economics = extractEconomicsFromFundamentals(fundamentals);
+        
         return {
           ...node,
-          production: Number(production.toFixed(2)),
-          demand: Number(demand.toFixed(2)),
-          imports: Number((surplus < 0 ? Math.abs(surplus) : 0).toFixed(2)),
-          exports: Number((surplus > 0 ? surplus : 0).toFixed(2)),
-          surplus: Number(surplus.toFixed(2)),
+          production: economics.production,
+          demand: economics.demand,
+          imports: economics.imports,
+          exports: economics.exports,
+          surplus: economics.surplus,
+          dataSource: economics.dataSource,
+          asOf: economics.asOf,
         };
       })
       .sort((a, b) => b.importance - a.importance);
@@ -231,7 +329,7 @@ export class SupplyChainGraphService {
       generatedAt: nowIso(),
       nodes,
       edges,
-      dataSource: source,
+      dataSource: graphDataSource,
     };
   }
 }
