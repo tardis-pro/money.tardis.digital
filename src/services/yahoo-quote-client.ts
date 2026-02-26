@@ -100,7 +100,8 @@ export async function fetchQuotes(tickers: string[]): Promise<QuoteBatchResult> 
     const failedTickers = tickers.filter(t => !resolvedTickers.has(t.toUpperCase()));
     return { quotes, failedTickers, fetchedAt };
 
-  } catch {
+  } catch (err) {
+    console.warn('[yahoo-quote-client] fetch failed, returning empty result:', err instanceof Error ? err.message : String(err));
     return { quotes: new Map(), failedTickers: tickers, fetchedAt };
   }
 }
