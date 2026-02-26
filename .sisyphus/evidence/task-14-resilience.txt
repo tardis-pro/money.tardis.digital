@@ -1,0 +1,74 @@
+# Task 14: Failure-path resilience tests
+
+## Summary
+Created test/resilience.test.ts with 15 failure-path resilience tests covering:
+- Quote provider outage (Yahoo Finance)
+- Screener timeout and partial symbol failures
+- Stale cache fallback for entity loader
+- Degraded response metadata validation
+
+## Tests Created
+
+### Yahoo Quote Client Resilience (3 tests)
+1. `yahoo-quote-client returns empty quotes and failed tickers on network error`
+   - Verifies QuoteBatchResult returns Map and failedTickers array even on failure
+   - Invalid tickers appear in failedTickers list
+2. `yahoo-quote-client handles partial success with mixed valid/invalid tickers`
+   - Mixed batch returns partial results with proper tracking
+3. `yahoo-quote-client includes timestamp metadata in result`
+   - fetchedAt timestamp is included in all responses
+
+### Market Snapshot Service Resilience (2 tests)
+4. `market snapshot service returns degraded response with quoteSource unavailable when quotes fail`
+   - quoteSource = "yahoo-finance" | "unavailable"
+   - updatedAt timestamp always present
+   - null prices when quotes unavailable
+5. `market snapshot service handles empty signal state gracefully`
+   - Falls back to entity-map tickers
+
+### Supply Chain Graph Resilience (2 tests)
+6. `supply chain graph returns dataSource fallback when fundamentals unavailable`
+   - dataSource = "live" | "cached" | "fallback"
+   - asOf timestamp on each node
+   - Zero economics values for fallback nodes
+7. `supply chain graph handles empty state with fallback entities`
+   - Graph always returns nodes even without signals
+
+### Entity Loader Resilience (3 tests)
+8. `entity loader returns fallback entities when screener unavailable`
+   - getAllEntities returns valid array with required fields
+9. `entity loader getAllEntitiesWithSource includes source metadata`
+   - source = "live" | "fallback"
+10. `entity loader getEntity returns null or valid entity for unknown ticker`
+    - Never throws, returns null for unknown
+
+### Screener Fundamentals Fetcher Resilience (2 tests)
+11. `screener fundamentals fetcher returns null for invalid ticker without throwing`
+    - fetchTicker returns null instead of throwing
+12. `screener fundamentals fetcher batch returns partial success with failed array`
+    - fetchTickers returns { success: [], failed: [] }
+    - Each failed entry has ticker and error message
+
+### Degraded Response Pattern Tests (3 tests)
+13. `services return degraded responses with required metadata fields`
+    - quoteSource, updatedAt on snapshots
+    - dataSource, asOf on graph nodes
+14. `degraded responses do not throw exceptions on provider outage`
+    - MarketSnapshotService and SupplyChainGraphService never throw
+
+## Key Patterns Validated
+
+1. **Graceful degradation**: Services return valid structures with degraded data instead of throwing
+2. **Metadata tracking**: 
+   - `quoteSource: "yahoo-finance" | "unavailable"`
+   - `dataSource: "live" | "cached" | "fallback"`
+   - `asOf: ISO timestamp`
+   - `fetchedAt: ISO timestamp`
+3. **Partial success**: Batch operations return both success and failure arrays
+4. **Fallback chains**: Entity loader falls back to hardcoded entities when Screener unavailable
+
+## TypeScript Verification
+- `npm run typecheck` exits 0
+
+## File Created
+- test/resilience.test.ts (281 lines)

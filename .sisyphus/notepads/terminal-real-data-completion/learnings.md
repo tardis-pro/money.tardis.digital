@@ -112,3 +112,37 @@ Use `'fresh' | 'stale' | 'never'` with 24h threshold and null guard:
 **HTML structure gotcha:**
 - Previous edit left a `<p>` tag outside the closing `</div>` — fixed by including the full block
 - Svelte doesn't error on malformed HTML, but it breaks the visual layout
+
+## T14: Failure-path resilience tests
+
+**Node.js native test runner pattern:**
+- Use `import test from "node:test"` and `import assert from "node:assert/strict"`
+- Tests are just functions: `test("description", async () => { ... })`
+- No Jest/Mocha — tests compile from `test/*.ts` to `dist/test/*.test.js`
+- Run via: `npm run build --silent && node --test dist/test/*.test.js`
+
+**Type imports with dynamic imports:**
+- `const { fetchQuotes, type QuoteBatchResult } = await import(...)` is INVALID
+- Use top-level `import type { QuoteBatchResult } from "..."` for types
+- Then dynamic import just for values: `const { fetchQuotes } = await import(...)`
+
+**Singleton reset in tests:**
+- Resetting singletons via `module.entityLoaderInstance = null` doesn't work reliably due to module caching
+- Better to just use the existing singleton and test its behavior
+- Services like `getEntityLoader()` and `getScreenerFetcher()` are designed to return existing instances
+
+**Degraded response pattern for resilience:**
+1. Services never throw on provider outage — return valid structure with degraded data
+2. Include metadata: `quoteSource: "yahoo-finance" | "unavailable"`, `dataSource: "live" | "cached" | "fallback"`
+3. Include timestamps: `asOf`, `fetchedAt`, `updatedAt` — always ISO strings
+4. Partial success for batch ops: `{ success: [...], failed: [{ ticker, error }] }`
+5. Null values for unavailable data: `latestPrice: null` when quotes fail
+
+**Key services tested for resilience:**
+- `yahoo-quote-client.ts` — returns `{ quotes: Map, failedTickers: [], fetchedAt }` even on network error
+- `market-snapshot.ts` — returns entries with `quoteSource: "unavailable"` when Yahoo fails
+- `supply-chain-graph.ts` — returns nodes with `dataSource: "fallback"` when Screener fails, economics = 0
+- `entity-loader.ts` — returns `FALLBACK_ENTITIES` when Screener API unavailable
+- `screener-fundamentals-fetcher.ts` — returns `null` for invalid tickers, `failed` array in batch
+- Previous edit left a `<p>` tag outside the closing `</div>` — fixed by including the full block
+- Svelte doesn't error on malformed HTML, but it breaks the visual layout
