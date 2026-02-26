@@ -660,7 +660,13 @@ async function buildServer() {
     if (!parsedQuery.success) {
       return reply.code(400).send({ error: parsedQuery.error.issues });
     }
+    const runAt = new Date().toISOString();
     const result = await pipeline.run(parsedQuery.data.sourceId);
+    const succeededAt = new Date().toISOString();
+    await store.transaction((state) => {
+      state.lastIngestRun = runAt;
+      state.lastIngestSuccess = succeededAt;
+    });
     await streamBus.publish({
       type: "pipeline.run.completed",
       payload: {
@@ -671,6 +677,32 @@ async function buildServer() {
       },
     });
     return reply.send(result);
+  });
+
+  app.get("/api/ingest/status", async (request, reply) => {
+    const access = await ensureRouteAccess(request, reply, "system");
+    if (!access.allowed) {
+      return access.response;
+    }
+    const state = await store.read();
+    const { lastIngestRun, lastIngestSuccess, signals, alerts } = state;
+    const now = Date.now();
+    const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+    let freshness: "fresh" | "stale" | "never";
+    if (lastIngestSuccess === null) {
+      freshness = "never";
+    } else if (now - new Date(lastIngestSuccess).getTime() <= TWENTY_FOUR_HOURS_MS) {
+      freshness = "fresh";
+    } else {
+      freshness = "stale";
+    }
+    return reply.send({
+      lastRun: lastIngestRun,
+      lastSuccess: lastIngestSuccess,
+      signalCount: signals.length,
+      alertCount: alerts.length,
+      freshness,
+    });
   });
 
   app.get("/api/signals", async (request, reply) => {

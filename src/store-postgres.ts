@@ -326,7 +326,7 @@ export class PostgresStore implements Store {
         this.pool.query<{ payload: UserProfile }>("SELECT payload FROM policy_signal.user_profiles"),
         this.pool.query<{ payload: AccessAuditRecord }>("SELECT payload FROM policy_signal.access_audits ORDER BY ts DESC"),
         this.pool.query<{ payload: StreamEventRecord }>("SELECT payload FROM policy_signal.stream_events ORDER BY ts DESC"),
-        this.pool.query<{ payload: { streamSequence: number } }>("SELECT payload FROM policy_signal.stream_state WHERE id = 'singleton'"),
+        this.pool.query<{ payload: { streamSequence: number; lastIngestRun: string | null; lastIngestSuccess: string | null } }>("SELECT payload FROM policy_signal.stream_state WHERE id = 'singleton'"),
         this.pool.query<{ payload: ChartTemplate }>("SELECT payload FROM policy_signal.chart_templates ORDER BY id ASC"),
         this.pool.query<{ payload: ScreenDefinition }>("SELECT payload FROM policy_signal.screens ORDER BY id ASC"),
         this.pool.query<{ payload: ScreenRun }>("SELECT payload FROM policy_signal.screen_runs ORDER BY ts DESC"),
@@ -359,6 +359,8 @@ export class PostgresStore implements Store {
       accessAudits: rowPayload(accessAudits.rows),
       streamEvents: rowPayload(streamEvents.rows),
       streamSequence: streamState.rows[0]?.payload.streamSequence ?? 0,
+      lastIngestRun: streamState.rows[0]?.payload.lastIngestRun ?? null,
+      lastIngestSuccess: streamState.rows[0]?.payload.lastIngestSuccess ?? null,
       chartTemplates: rowPayload(chartTemplates.rows),
       screens: rowPayload(screens.rows),
       screenRuns: rowPayload(screenRuns.rows),
@@ -489,7 +491,7 @@ export class PostgresStore implements Store {
         ]);
       }
       await client.query("INSERT INTO policy_signal.stream_state (id, payload) VALUES ('singleton', $1)", [
-        { streamSequence: state.streamSequence },
+        { streamSequence: state.streamSequence, lastIngestRun: state.lastIngestRun, lastIngestSuccess: state.lastIngestSuccess },
       ]);
       for (const template of state.chartTemplates) {
         await client.query("INSERT INTO policy_signal.chart_templates (id, payload) VALUES ($1, $2)", [

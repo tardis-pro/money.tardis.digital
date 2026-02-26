@@ -61,6 +61,8 @@ export interface StateStore {
   riskSnapshots: RiskSnapshot[];
   attributionOverrides: AttributionOverride[];
   programRecords: ProgramRecord[];
+  lastIngestRun: string | null;
+  lastIngestSuccess: string | null;
 }
 
 export interface Store {
@@ -105,6 +107,8 @@ function makeDefaultState(): StateStore {
     riskSnapshots: [],
     attributionOverrides: [],
     programRecords: [],
+    lastIngestRun: null,
+    lastIngestSuccess: null,
   };
 }
 
@@ -244,6 +248,8 @@ export class JsonStore implements Store {
       riskSnapshots: loaded.riskSnapshots ?? fallback.riskSnapshots,
       attributionOverrides: loaded.attributionOverrides ?? fallback.attributionOverrides,
       programRecords: loaded.programRecords ?? fallback.programRecords,
+      lastIngestRun: loaded.lastIngestRun ?? null,
+      lastIngestSuccess: loaded.lastIngestSuccess ?? null,
     };
   }
 

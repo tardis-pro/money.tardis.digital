@@ -1,0 +1,29 @@
+Task T11 — Policy ingestion scheduling + freshness metadata
+Date: 2026-02-26
+
+## Changes Made
+
+### 1. docker-compose.yml
+- Added INGEST_URL env var: http://app:3000/api/ingest/run
+- Added cron entry: '30 0 * * * curl -sS -X POST $$INGEST_URL >> /var/log/cron.log 2>&1'
+  (0:30 UTC = 6:00 AM IST, runs daily)
+
+### 2. src/store.ts
+- Added to StateStore interface: lastIngestRun: string | null; lastIngestSuccess: string | null;
+- Added to makeDefaultState(): lastIngestRun: null, lastIngestSuccess: null
+- Added to JsonStore.read(): loaded.lastIngestRun ?? null, loaded.lastIngestSuccess ?? null
+
+### 3. src/store-postgres.ts
+- Updated stream_state singleton query type to include lastIngestRun/lastIngestSuccess
+- Updated read() to surface lastIngestRun/lastIngestSuccess from stream_state payload
+- Updated write() to persist lastIngestRun/lastIngestSuccess in stream_state payload
+
+### 4. src/server.ts
+- POST /api/ingest/run: after pipeline.run() succeeds, writes lastIngestRun + lastIngestSuccess via store.transaction()
+- Added GET /api/ingest/status endpoint returning: { lastRun, lastSuccess, signalCount, alertCount, freshness: 'fresh'|'stale'|'never' }
+  Freshness logic: never (null), fresh (<= 24h ago), stale (> 24h ago)
+
+## Verification
+- npm run typecheck: exits 0 (clean)
+- No as any / @ts-ignore used
+- No existing cron entries broken
