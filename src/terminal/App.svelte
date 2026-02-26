@@ -123,10 +123,10 @@
         fetchJSON('/api/alerts'),
         fetchJSON('/api/mit/portfolio'),
         fetchJSON('/api/heatmap'),
-        fetchJSON('/api/screener'),
-        fetchJSON('/api/mit/pipeline/status'),
-        fetchJSON('/api/mit/hero'),
-        fetchJSON('/api/trades')
+        fetchJSON('/api/mit/screenipy/candidates'),
+        fetchJSON('/api/mit/pipeline/latest'),
+        fetchJSON('/api/mit/hero/analyze'),
+        fetchJSON('/api/mit/trades')
       ]);
       
       signals = results[0] || [];
@@ -210,7 +210,7 @@
       
       // Run screener
       if (lcQuery.includes('run screener') || lcQuery.includes('scan')) {
-        const result = await fetchJSON('/api/screener/run', { method: 'POST' });
+        const result = await fetchJSON('/api/mit/screenipy/run');
         if (result) {
           screenerResults = result.candidates || [];
           setActivePanel('screener');
@@ -411,6 +411,7 @@
               <p><span class="text-orange-500">></span> Press <span class="text-white">1-8</span> switch panels</p>
               <p><span class="text-orange-500">></span> "help" - all commands</p>
             </div>
+              <p><span class="text-orange-500">></span> "show heatmap" / "run screener" / historical data: POST /api/mit/pipeline/run</p>
           </div>
           
           <!-- Messages -->
@@ -672,7 +673,7 @@
           <button 
             class="px-3 py-1 rounded bg-orange-500 text-black text-xs font-medium hover:bg-orange-600 transition-colors"
             on:click={async () => { 
-              const result = await fetchJSON('/api/screener/run', { method: 'POST' });
+              const result = await fetchJSON('/api/mit/screenipy/run');
               if (result) screenerResults = result.candidates || [];
             }}
           >
@@ -761,7 +762,7 @@
           <button 
             class="px-3 py-1 rounded bg-orange-500/20 text-orange-500 text-xs hover:bg-orange-500/30 transition-colors"
             on:click={async () => {
-              heroPick = await fetchJSON('/api/mit/hero');
+              heroPick = await fetchJSON('/api/mit/hero/analyze');
             }}
           >
             ANALYZE

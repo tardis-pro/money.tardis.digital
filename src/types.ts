@@ -351,12 +351,16 @@ export interface SourceDriftEntry {
 export interface MarketSnapshotEntry {
   ticker: string;
   sector: string;
-  latestPrice: number;
-  adjustedPrice: number;
+  latestPrice: number | null;
+  adjustedPrice: number | null;
   adjustmentFactor: number;
-  dayChangePct: number;
+  dayChangePct: number | null;
   breadthSignalScore: number;
   updatedAt: string;
+  quoteSource?: string;
+  quoteTime?: string | null;
+  isDelayed?: boolean;
+  delayMinutes?: number;
 }
 
 export interface EntityLinkDiagnostics {

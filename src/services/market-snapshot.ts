@@ -2,6 +2,7 @@ import corporateActions from "../config/corporate-actions.json" with { type: "js
 import entityMap from "../config/entity-map.json" with { type: "json" };
 import type { Store } from "../store.js";
 import type { MarketSnapshotEntry } from "../types.js";
+import { fetchQuotes } from "./yahoo-quote-client.js";
 
 interface CorporateActionConfig {
   ticker: string;
@@ -38,43 +39,46 @@ export class MarketSnapshotService {
       }
     }
 
-    const entries = [...tickerSet].map((ticker) => {
+    const tickers = [...tickerSet];
+
+    // Fetch live quotes from Yahoo Finance
+    const { quotes, fetchedAt } = await fetchQuotes(tickers);
+
+    const entries = tickers.map((ticker) => {
       const entity = entityByTicker.get(ticker);
-      const signals = state.signals.filter((signal) => signal.linkedEntities.some((item) => item.ticker === ticker));
-      const outcomes = state.outcomes.filter((outcome) => {
-        const signal = state.signals.find((item) => item.id === outcome.signalId);
-        return signal ? signal.linkedEntities.some((item) => item.ticker === ticker) : false;
-      });
+      const signals = state.signals.filter((s) => s.linkedEntities.some((item) => item.ticker === ticker));
 
       const breadthSignalScore = signals.length > 0
-        ? signals.reduce((sum, signal) => sum + signal.score, 0) / signals.length
+        ? signals.reduce((sum, s) => sum + s.score, 0) / signals.length
         : 0;
 
-      const avgReturn = outcomes.length > 0
-        ? outcomes.reduce((sum, outcome) => sum + outcome.realizedReturn, 0) / outcomes.length
-        : breadthSignalScore * 0.01;
-
-      const dayChangePct = Number((avgReturn * 100).toFixed(2));
-      const latestPrice = Number((100 * (1 + avgReturn)).toFixed(2));
+      const quote = quotes.get(ticker.toUpperCase());
       const adjustmentFactor = actionByTicker.get(ticker)?.adjustmentFactor ?? 1;
-      const adjustedPrice = Number((latestPrice * adjustmentFactor).toFixed(2));
-      const updatedAt = [...signals]
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.createdAt ?? new Date().toISOString();
+
+      const latestPrice = quote ? Number((quote.regularMarketPrice * adjustmentFactor).toFixed(2)) : null;
+      const dayChangePct = quote ? Number(quote.regularMarketChangePercent.toFixed(2)) : null;
+      const updatedAt = quote
+        ? new Date(quote.regularMarketTime * 1000).toISOString()
+        : [...signals].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.createdAt ?? fetchedAt;
 
       return {
         ticker,
         sector: entity?.sector ?? "unknown",
         latestPrice,
-        adjustedPrice,
+        adjustedPrice: latestPrice,
         adjustmentFactor,
         dayChangePct,
         breadthSignalScore: Number(breadthSignalScore.toFixed(4)),
         updatedAt,
-      } satisfies MarketSnapshotEntry;
+        quoteSource: quote ? "yahoo-finance" : "unavailable",
+        quoteTime: quote ? new Date(quote.regularMarketTime * 1000).toISOString() : null,
+        isDelayed: true,
+        delayMinutes: 15,
+      } as MarketSnapshotEntry;
     });
 
     return entries
-      .sort((a, b) => Math.abs(b.dayChangePct) - Math.abs(a.dayChangePct))
+      .sort((a, b) => Math.abs(b.dayChangePct ?? 0) - Math.abs(a.dayChangePct ?? 0))
       .slice(0, limit);
   }
 }

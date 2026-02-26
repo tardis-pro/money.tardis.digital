@@ -1,0 +1,46 @@
+# Task 1: Fix 5 Broken Endpoint Paths in Svelte Terminal UI
+
+## Date: 2026-02-26
+
+## Changes Made to `src/terminal/App.svelte`
+
+### 1. loadData() function (lines 126-129)
+
+| Line | Old Endpoint | New Endpoint |
+|------|-------------|--------------|
+| 126  | `/api/screener` | `/api/mit/screenipy/candidates` |
+| 127  | `/api/mit/pipeline/status` | `/api/mit/pipeline/latest` |
+| 128  | `/api/mit/hero` | `/api/mit/hero/analyze` |
+| 129  | `/api/trades` | `/api/mit/trades` |
+
+### 2. Screener "RUN SCREENER" button (line 675)
+
+| Old | New |
+|-----|-----|
+| `fetchJSON('/api/screener/run', { method: 'POST' })` | `fetchJSON('/api/mit/screenipy/run')` |
+
+Note: Changed from POST to GET (endpoint is GET per mit-routes.ts line 326)
+
+### 3. Chat "run screener" branch (line 213)
+
+| Old | New |
+|-----|-----|
+| `fetchJSON('/api/screener/run', { method: 'POST' })` | `fetchJSON('/api/mit/screenipy/run')` |
+
+### 4. Hero panel "ANALYZE" button (line 764)
+
+| Old | New |
+|-----|-----|
+| `fetchJSON('/api/mit/hero')` | `fetchJSON('/api/mit/hero/analyze')` |
+
+## Verification
+
+- `npm run typecheck` exits 0 ✓
+
+## Backend Endpoint References (mit-routes.ts)
+
+- `/api/mit/screenipy/candidates` - line 366
+- `/api/mit/pipeline/latest` - line 951
+- `/api/mit/hero/analyze` - line 969
+- `/api/mit/trades` - line 1214
+- `/api/mit/screenipy/run` (GET) - line 326

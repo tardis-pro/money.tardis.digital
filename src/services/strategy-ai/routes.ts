@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { BUILTIN_TEMPLATES, StrategyGenerator } from "./generator.js";
+import { ADVANCED_TEMPLATES } from "./templates.js";
 import type { Strategy } from "./dsl/strategy-schema.js";
 import { NLManagerAgent, type ChatMessage, type LLMProvider } from "./manager-agent.js";
 import { Simulator, type SimulationConfig, type SimulationResult } from "./simulator.js";
@@ -182,15 +183,16 @@ export async function registerStrategyAiRoutes(app: FastifyInstance): Promise<vo
   });
 
   app.get("/api/templates", async () => {
-    const templates = Object.values(BUILTIN_TEMPLATES);
-    return { templates, count: templates.length };
+    const allTemplates = [...Object.values(BUILTIN_TEMPLATES), ...ADVANCED_TEMPLATES];
+    return { templates: allTemplates, count: allTemplates.length };
   });
 
   app.get("/api/templates/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const template = Object.values(BUILTIN_TEMPLATES).find((item) => item.id === id)
+    const allTemplates = [...Object.values(BUILTIN_TEMPLATES), ...ADVANCED_TEMPLATES];
+    const template = allTemplates.find((item) => item.id === id)
       ?? BUILTIN_TEMPLATES[id]
-      ?? Object.values(BUILTIN_TEMPLATES).find((item) => normalize(item.id) === normalize(id));
+      ?? allTemplates.find((item) => normalize(item.id) === normalize(id));
 
     if (!template) {
       return reply.code(404).send({ error: `Template not found: ${id}` });

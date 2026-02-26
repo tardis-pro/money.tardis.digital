@@ -1,0 +1,40 @@
+{
+  "timestamp": "2026-02-26",
+  "typecheck": "PASS (exit 0)",
+  "scenarios": {
+    "task1_watchlist_create": {
+      "status": "PASS",
+      "result": "201, id starts with wl_, name correct, tickers deduped+uppercased"
+    },
+    "task1_watchlist_update": {
+      "status": "PASS",
+      "result": "200, name and tickers updated"
+    },
+    "task1_watchlist_delete": {
+      "status": "PASS",
+      "result": "204 no body"
+    },
+    "task2_signal_wipe": {
+      "status": "PASS",
+      "result": "200, clearedSignals is number, reingestTriggered=true"
+    },
+    "task3_supply_chain_graph": {
+      "status": "PASS",
+      "result": "nodes=10, edges=7, dataSource=live"
+    },
+    "task5_mit_daily_ideas": {
+      "status": "PASS",
+      "result": "Returns array (empty when no pipeline run, or populated after run)"
+    },
+    "task7_strategy_routes": {
+      "status": "PASS",
+      "result": "Returns strategies array (postgres mode active via .env)"
+    }
+  },
+  "notes": [
+    "Server running in postgres mode (STORE_BACKEND=postgres in .env)",
+    "All demo users have system entitlement by design (existing codebase behavior)",
+    "Supply chain graph returns dataSource=live when Screener.in API available, fallback otherwise",
+    "Strategy routes fully functional in postgres mode"
+  ]
+}

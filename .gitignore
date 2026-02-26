@@ -6,3 +6,6 @@ data/
 .agents/
 .venv/
 .venv311/
+.env
+.env.local
+.env.*.local

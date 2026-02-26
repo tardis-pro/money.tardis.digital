@@ -19,7 +19,8 @@
     "start": "NODE_ENV=production node dist/server/server-entry.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun run build && node --test dist/test/*.test.js",
-    "e2e:backfill": "node scripts/e2e_backfill.mjs"
+    "e2e:backfill": "node scripts/e2e_backfill.mjs",
+    "seed:strategies": "node scripts/seed-strategies.mjs"
   },
   "dependencies": {
     "@fastify/multipart": "^9.4.0",

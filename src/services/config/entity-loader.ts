@@ -4,6 +4,10 @@
  */
 
 import { BaseConfigurationLoader, ConfigurationSource, normalizeText } from './base-loader.js';
+import mitUniverseRaw from '../../config/mit-universe.json' with { type: 'json' };
+
+interface UniverseTicker { ticker: string; name: string; sector: string; }
+const MIT_UNIVERSE = mitUniverseRaw as UniverseTicker[];
 
 export interface EntityMetadata {
   ticker: string;
@@ -68,7 +72,7 @@ class ScreenerEntitySource implements ConfigurationSource<Map<string, EntityMeta
   cacheTtlSeconds = 43200; // 12 hours
 
   private readonly searchUrl = 'https://www.screener.in/api/company/search';
-  private readonly knownTickers = ['HAL', 'BEL', 'IRCTC', 'IRFC', 'NTPC', 'PFC', 'SBIN', 'HDFCBANK', 'LT', 'RVNL'];
+  private readonly knownTickers: string[] = MIT_UNIVERSE.map(t => t.ticker);
 
   async isAvailable(): Promise<boolean> {
     try {
@@ -222,7 +226,7 @@ class ScreenerEntitySource implements ConfigurationSource<Map<string, EntityMeta
 }
 
 // Fallback entity data
-const FALLBACK_ENTITIES: Map<string, EntityMetadata> = new Map([
+const RICH_FALLBACK_ENTRIES: Map<string, EntityMetadata> = new Map([
   ['HAL', {
     ticker: 'HAL',
     companyName: 'Hindustan Aeronautics Ltd',
@@ -363,6 +367,31 @@ const FALLBACK_ENTITIES: Map<string, EntityMetadata> = new Map([
   }]
 ]);
 
+function buildFallbackEntities(): Map<string, EntityMetadata> {
+  const map = new Map<string, EntityMetadata>();
+  for (const u of MIT_UNIVERSE) {
+    map.set(u.ticker, {
+      ticker: u.ticker,
+      companyName: u.name,
+      sector: u.sector,
+      industry: u.sector,
+      isGovernmentOwned: false,
+      governmentOwnershipPct: null,
+      ministries: PSU_MINISTRY_MAP[u.ticker] ?? [],
+      subsidiaries: [],
+      keywords: [u.ticker.toLowerCase(), ...u.name.toLowerCase().split(' ').filter(w => w.length > 3)],
+      listingDate: '',
+      isin: '',
+      lastUpdated: new Date().toISOString(),
+    });
+  }
+  // Overlay the rich existing entries (they have better metadata)
+  RICH_FALLBACK_ENTRIES.forEach((v, k) => map.set(k, v));
+  return map;
+}
+
+const FALLBACK_ENTITIES = buildFallbackEntities();
+
 /**
  * Loader for entity metadata with Screener.in as primary source
  */
@@ -482,6 +511,18 @@ export class EntityMetadataLoader extends BaseConfigurationLoader<Map<string, En
     }
 
     return score;
+  }
+
+  /**
+   * Get universe coverage report (total vs cached vs fallback)
+   */
+  async getCoverageReport(): Promise<{ total: number; cached: number; fallback: number }> {
+    const result = await this.load();
+    return {
+      total: MIT_UNIVERSE.length,
+      cached: result.data.size,
+      fallback: result.sourceId === 'fallback' ? result.data.size : 0,
+    };
   }
 }
 

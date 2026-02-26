@@ -1,0 +1,2 @@
+404 Response shape:
+{ error: "No pipeline run found", remediation: "POST /api/mit/pipeline/run to generate daily ideas" }

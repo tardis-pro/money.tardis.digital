@@ -1,0 +1,69 @@
+# Task 2: Add DELETE /api/signals endpoint
+
+## Typecheck Result (npm run typecheck)
+
+Pre-existing errors in codebase (NOT related to this task):
+- src/services/strategy-ai/ - Missing StrategyStore methods (upsertGameExperiment, createBacktestRun, etc.)
+- Various --downlevelIteration errors
+- Various --esModuleInterop errors
+- Various JSON import errors
+
+## My Changes - No Type Errors
+
+Files modified:
+1. src/store.ts - Added clearSignals() to Store interface (line 74) and JsonStore implementation (lines 278-284)
+2. src/store-postgres.ts - Added clearSignals() to PostgresStore (lines 606-613)
+3. src/server.ts - Added DELETE /api/signals route (lines 689-702)
+
+LSP diagnostics confirm no errors in these files:
+- src/store.ts: No diagnostics found
+- src/store-postgres.ts: No diagnostics found  
+- src/server.ts: Only pre-existing hints (unused variables)
+
+## Implementation Summary
+
+### Store Interface (src/store.ts:74)
+```typescript
+clearSignals(): Promise<number>;
+```
+
+### JsonStore Implementation (src/store.ts:278-284)
+```typescript
+async clearSignals(): Promise<number> {
+  return this.transaction((state) => {
+    const count = state.signals.length;
+    state.signals = [];
+    return count;
+  });
+}
+```
+
+### PostgresStore Implementation (src/store-postgres.ts:606-613)
+```typescript
+async clearSignals(): Promise<number> {
+  const countResult = await this.pool.query<{ count: string }>(
+    "SELECT count(*)::int AS count FROM policy_signal.signals"
+  );
+  const count = Number(countResult.rows[0]?.count ?? 0);
+  await this.pool.query("DELETE FROM policy_signal.signals");
+  return count;
+}
+```
+
+### DELETE Route (src/server.ts:689-702)
+```typescript
+app.delete("/api/signals", async (request, reply) => {
+  const access = await ensureRouteAccess(request, reply, "system");
+  if (!access.allowed) return access.response;
+  const clearedSignals = await store.clearSignals();
+  // Fire-and-forget pipeline re-ingest
+  void pipeline.run().catch((err: unknown) => {
+    console.error("Background reingest failed:", err instanceof Error ? err.message : err);
+  });
+  return reply.send({
+    clearedSignals,
+    reingestTriggered: true,
+    message: "Signals cleared. Re-ingest running in background.",
+  });
+});
+```

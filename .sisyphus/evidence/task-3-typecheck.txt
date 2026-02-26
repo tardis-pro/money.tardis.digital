@@ -1,0 +1,7 @@
+=== TypeCheck Output ===
+
+> india-policy-signal-terminal@1.0.0 typecheck
+> tsc -p tsconfig.json --noEmit
+
+
+=== Exit Code: 0 ===

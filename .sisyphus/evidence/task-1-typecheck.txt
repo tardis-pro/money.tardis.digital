@@ -1,0 +1,15 @@
+## Typecheck Evidence — Watchlist CRUD task
+
+### Modified files — ZERO errors (LSP diagnostics clean):
+- src/store.ts: No diagnostics
+- src/store-postgres.ts: No diagnostics
+- src/services/terminal.ts: No diagnostics
+- src/server.ts: No diagnostics
+
+### Pre-existing errors (14 errors in strategy-ai — EXISTED BEFORE this task):
+src/services/strategy-ai/game-theory/index.ts: 6 errors (upsertGameExperiment, createPayoffMatrix, createEvolutionHistory, createNashEquilibrium)
+src/services/strategy-ai/routes.ts: 8 errors (BacktestRun, createBacktestRun, listBacktestRuns, getBacktestRun, getBacktestMetrics)
+
+These errors are in src/services/strategy-ai/ which was explicitly excluded from modification scope.
+They existed before this task (verified via git stash + typecheck — same 14 errors).
+This task introduced ZERO new type errors.

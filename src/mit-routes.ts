@@ -1,3 +1,5 @@
+import { readdir, readFile } from "node:fs/promises";
+import path from "node:path";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { Store } from "./store.js";
@@ -45,6 +47,7 @@ import { QueryParser } from "./services/mit/query-parser.js";
 import { ChartGenerator } from "./services/mit/chart-generator.js";
 import { StockLinksService } from "./services/mit/stock-links.js";
 import { HistoricalAnalysisService } from "./services/mit/historical-analysis.js";
+import { getEntityLoader } from "./services/config/entity-loader.js";
 
 const HISTORICAL_CANDLE_DAYS = 5000;
 
@@ -1637,6 +1640,112 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
       return reply.code(500).send({ error: error instanceof Error ? error.message : "Analysis CSV export failed" });
     }
   });
+  app.get("/api/mit/data/sources", async (_request, reply) => {
+    const candlesDir = path.join(process.cwd(), "data", "mit-candles");
+    let cachedTickers: string[] = [];
+    let oldestDate = "unknown";
+    let newestDate = "unknown";
+    try {
+      const files = await readdir(candlesDir);
+      cachedTickers = files.filter(f => f.endsWith(".json")).map(f => f.replace(".json", ""));
+      if (cachedTickers.length > 0) {
+        const firstTicker = cachedTickers[0];
+        if (firstTicker !== undefined) {
+          const raw = await readFile(path.join(candlesDir, firstTicker + ".json"), "utf8");
+          const sample: unknown = JSON.parse(raw);
+          if (Array.isArray(sample) && sample.length > 0) {
+            const first = sample[0] as Record<string, unknown>;
+            const last = sample[sample.length - 1] as Record<string, unknown>;
+            if (typeof first["date"] === "string") oldestDate = first["date"];
+            if (typeof last["date"] === "string") newestDate = last["date"];
+          }
+        }
+      }
+    } catch { /* dir may not exist */ }
+
+    return reply.send({
+      sources: [
+        {
+          name: "Yahoo Finance",
+          type: "ohlcv-candles",
+          endpoint: "query1.finance.yahoo.com/v8/finance/chart/{TICKER}.NS",
+          delay: "~15 minutes",
+          keyRequired: false,
+          cost: "free",
+          cacheDir: "data/mit-candles/",
+          cachedTickerCount: cachedTickers.length,
+          dateRangeAvailable: { from: oldestDate, to: newestDate },
+          refreshCommand: "POST /api/mit/pipeline/run"
+        },
+        {
+          name: "NSE India API",
+          type: "ohlcv-candles",
+          endpoint: "nseindia.com/api/historical/cm/equity",
+          delay: "~5 minutes",
+          keyRequired: false,
+          cost: "free",
+          notes: "cookie-based auth, auto-refreshed, primary source before Yahoo fallback",
+          refreshCommand: "POST /api/mit/pipeline/run"
+        },
+        {
+          name: "Screener.in",
+          type: "fundamentals",
+          endpoint: "screener.in/company/{TICKER}/consolidated/",
+          delay: "daily",
+          keyRequired: false,
+          cost: "free",
+          notes: "ROCE, promoter holding, revenue history, OPM, FCF — India-specific",
+          refreshCommand: "POST /api/mit/fundamentals/refresh"
+        },
+        {
+          name: "Yahoo Finance Financials",
+          type: "fundamentals",
+          endpoint: "query2.finance.yahoo.com/v10/finance/quoteSummary/{TICKER}.NS",
+          delay: "daily",
+          keyRequired: false,
+          cost: "free",
+          notes: "PE, PEG, market cap, earnings",
+          refreshCommand: "POST /api/mit/fundamentals/refresh"
+        },
+        {
+          name: "Google News RSS",
+          type: "news",
+          endpoint: "news.google.com/rss/search?q={TICKER}+NSE",
+          delay: "real-time",
+          keyRequired: false,
+          cost: "free",
+          refreshCommand: "GET /api/mit/news/{ticker}"
+        }
+      ],
+      cachedTickers,
+      howToFetchHistoricalData: {
+        step1: "POST /api/mit/pipeline/run — runs full pipeline: fetches candles + fundamentals for all 52 universe tickers",
+        step2: "GET /api/mit/data/sources — check coverage and date ranges after pipeline run",
+        step3: "GET /api/mit/technicals/{ticker} — access computed indicators from cached data",
+        notes: "Candles are cached in data/mit-candles/{TICKER}.json and merged on each run. 13+ years of data available."
+      }
+    });
+  });
+
+  app.get("/api/mit/screener/health", async (_request, reply) => {
+    const entityLoader = getEntityLoader();
+    const coverage = await entityLoader.getCoverageReport().catch(() => ({ total: 52, cached: 0, fallback: 0 }));
+    const testResult = await entityLoader.getEntity('RELIANCE').catch(() => null);
+    const available = testResult !== null;
+    return reply.send({
+      available,
+      lastCheckedAt: new Date().toISOString(),
+      cachedTickerCount: coverage.cached,
+      universeCoverage: {
+        total: coverage.total,
+        cached: coverage.cached,
+        percentCovered: Math.round((coverage.cached / coverage.total) * 100),
+      },
+      cachePolicy: { ttlSeconds: 43200, description: "12-hour entity metadata cache" },
+      notes: "Coverage expands as Screener.in requests succeed and cache warms"
+    });
+  });
+
 }
 
 function toCsvCell(value: string): string {
