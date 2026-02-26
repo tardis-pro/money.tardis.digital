@@ -85,7 +85,8 @@ interface SupplyGraph {
   edges: Array<{ from: string; to: string; relation: string; lag: number; confidence: number; propagationScore: number; channel: string }>;
 }
 interface CommandLog { route: string; latencyMs: number; input: string; status: string; errorMessage?: string }
-interface Watchlist { name: string; tickers: string[] }
+interface Watchlist { id: string; name: string; tickers: string[]; createdAt: string }
+interface Strategy { id: string; name: string; status: string; sector?: string; tags?: string[]; createdAt: string }
 
 const TABS = [
   { id: "overview", label: "OVW", full: "Overview" },
@@ -95,6 +96,7 @@ const TABS = [
   { id: "supply-chain", label: "SCG", full: "Supply Chain" },
   { id: "watchlists", label: "WCH", full: "Watchlists" },
   { id: "mit", label: "MIT", full: "MIT Trading" },
+  { id: "strategy", label: "STR", full: "Strategy" },
 ] as const;
 
 function StatCell({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: string }) {
@@ -124,6 +126,18 @@ export function App() {
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
+
+  const [editingWatchlistId, setEditingWatchlistId] = useState<string | null>(null);
+  const [newWatchlistName, setNewWatchlistName] = useState('');
+  const [newWatchlistTickers, setNewWatchlistTickers] = useState('');
+
+  const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const [strategyPrompt, setStrategyPrompt] = useState('');
+  const [strategyLoading, setStrategyLoading] = useState(false);
+  const [strategyError, setStrategyError] = useState('');
+  const [strategyMode, setStrategyMode] = useState<'available' | 'unavailable'>('available');
+  const [editName, setEditName] = useState('');
+  const [editTickers, setEditTickers] = useState('');
   const switchUser = useCallback((id: string) => {
     activeUserId = id;
     setUserId(id);
@@ -156,6 +170,91 @@ export function App() {
       setLoading(false);
     }
   }, []);
+
+  const createWatchlist = useCallback(async () => {
+    const tickers = newWatchlistTickers.split(',').map(t => t.trim().toUpperCase()).filter(Boolean);
+    if (!newWatchlistName || tickers.length === 0) return;
+    
+    try {
+      await fetchJSON('/api/watchlists', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: newWatchlistName, tickers })
+      });
+      setNewWatchlistName('');
+      setNewWatchlistTickers('');
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [newWatchlistName, newWatchlistTickers, refresh]);
+
+  const updateWatchlist = useCallback(async (id: string, name: string, tickers: string[]) => {
+    try {
+      await fetchJSON('/api/watchlists/' + id, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name, tickers })
+      });
+      setEditingWatchlistId(null);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  const deleteWatchlist = useCallback(async (id: string) => {
+    if (!confirm('Delete watchlist?')) return;
+    
+    try {
+      await fetchJSON('/api/watchlists/' + id, { method: 'DELETE' });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  const fetchStrategies = useCallback(async () => {
+    try {
+      const data = await fetchJSON('/api/strategies');
+      setStrategies(data.strategies ?? []);
+      setStrategyMode('available');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('501')) {
+        setStrategyMode('unavailable');
+      } else {
+        setStrategyError(msg);
+      }
+    }
+  }, []);
+
+  const createStrategy = useCallback(async () => {
+    if (!strategyPrompt.trim()) return;
+    setStrategyLoading(true);
+    try {
+      await fetchJSON('/api/strategies', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: strategyPrompt })
+      });
+      setStrategyPrompt('');
+      await fetchStrategies();
+    } catch (err) {
+      setStrategyError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setStrategyLoading(false);
+    }
+  }, [strategyPrompt, fetchStrategies]);
+
+  const simulateStrategy = useCallback(async (id: string) => {
+    try {
+      await fetchJSON('/api/strategies/' + id + '/simulate', { method: 'POST' });
+      await fetchStrategies();
+    } catch (err) {
+      setStrategyError(err instanceof Error ? err.message : String(err));
+    }
+  }, [fetchStrategies]);
 
   const runPipeline = useCallback(async () => {
     try {
@@ -193,9 +292,10 @@ export function App() {
 
   useEffect(() => {
     refresh();
+    fetchStrategies();
     const id = setInterval(refresh, 12000);
     return () => clearInterval(id);
-  }, [refresh]);
+  }, [refresh, fetchStrategies]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -642,15 +742,80 @@ export function App() {
               <span className="text-2xs font-mono text-term-muted">${watchlists.length} LISTS</span>
             </div>
             <div className="p-3 space-y-2">
-              ${watchlists.map((w) => html`
-                <div className="border border-term-border rounded bg-term-surface px-3 py-2">
-                  <div className="text-xs font-semibold text-term-bright mb-1">${w.name}</div>
-                  <div className="flex flex-wrap gap-1">
-                    ${w.tickers.map((t) => html`
-                      <span className="px-1.5 py-0.5 text-2xs font-mono border border-accent-green/20 rounded text-accent-green bg-accent-green-dim">${t}</span>
-                    `)}
-                  </div>
+              ${/* New watchlist create form */ ""}
+              <div className="border border-dashed border-term-border rounded bg-term-surface px-3 py-2">
+                <div className="text-2xs font-mono text-term-muted mb-2 uppercase tracking-widest">New Watchlist</div>
+                <div className="space-y-1.5">
+                  <input
+                    type="text"
+                    placeholder="Name"
+                    value=${newWatchlistName}
+                    onChange=${(e: React.ChangeEvent<HTMLInputElement>) => setNewWatchlistName(e.target.value)}
+                    className="bg-term-surface border border-term-border rounded px-2 py-1 text-xs font-mono text-term-text outline-none focus:border-accent-green/50 w-full"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Tickers (comma-separated, e.g. HAL,BEL)"
+                    value=${newWatchlistTickers}
+                    onChange=${(e: React.ChangeEvent<HTMLInputElement>) => setNewWatchlistTickers(e.target.value)}
+                    className="bg-term-surface border border-term-border rounded px-2 py-1 text-xs font-mono text-term-text outline-none focus:border-accent-green/50 w-full"
+                  />
+                  <button
+                    onClick=${createWatchlist}
+                    className="px-2 py-1 text-xs font-mono bg-accent-green/10 border border-accent-green/30 rounded text-accent-green hover:bg-accent-green/20 w-full"
+                  >+ Create</button>
                 </div>
+              </div>
+              ${watchlists.map((w) => html`
+                ${editingWatchlistId === w.id ? html`
+                  <div className="border border-accent-green/30 rounded bg-term-surface px-3 py-2">
+                    <div className="space-y-1.5">
+                      <input
+                        type="text"
+                        value=${editName}
+                        onChange=${(e: React.ChangeEvent<HTMLInputElement>) => setEditName(e.target.value)}
+                        className="bg-term-surface border border-term-border rounded px-2 py-1 text-xs font-mono text-term-text outline-none focus:border-accent-green/50 w-full"
+                      />
+                      <input
+                        type="text"
+                        value=${editTickers}
+                        onChange=${(e: React.ChangeEvent<HTMLInputElement>) => setEditTickers(e.target.value)}
+                        className="bg-term-surface border border-term-border rounded px-2 py-1 text-xs font-mono text-term-text outline-none focus:border-accent-green/50 w-full"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick=${() => updateWatchlist(w.id, editName, editTickers.split(',').map((t: string) => t.trim().toUpperCase()).filter(Boolean))}
+                          className="px-2 py-1 text-xs font-mono bg-accent-green/10 border border-accent-green/30 rounded text-accent-green hover:bg-accent-green/20"
+                        >Save</button>
+                        <button
+                          onClick=${() => setEditingWatchlistId(null)}
+                          className="px-2 py-1 text-xs font-mono bg-accent-red/10 border border-accent-red/30 rounded text-accent-red hover:bg-accent-red/20"
+                        >Cancel</button>
+                      </div>
+                    </div>
+                  </div>
+                ` : html`
+                  <div className="border border-term-border rounded bg-term-surface px-3 py-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="text-xs font-semibold text-term-bright">${w.name}</div>
+                      <div className="flex gap-1">
+                        <button
+                          onClick=${() => { setEditingWatchlistId(w.id); setEditName(w.name); setEditTickers(w.tickers.join(', ')); }}
+                          className="px-1.5 py-0.5 text-2xs font-mono bg-accent-green/10 border border-accent-green/30 rounded text-accent-green hover:bg-accent-green/20"
+                        >✎</button>
+                        <button
+                          onClick=${() => deleteWatchlist(w.id)}
+                          className="px-1.5 py-0.5 text-2xs font-mono bg-accent-red/10 border border-accent-red/30 rounded text-accent-red hover:bg-accent-red/20"
+                        >✕</button>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      ${w.tickers.map((t) => html`
+                        <span className="px-1.5 py-0.5 text-2xs font-mono border border-accent-green/20 rounded text-accent-green bg-accent-green-dim">${t}</span>
+                      `)}
+                    </div>
+                  </div>
+                `}
               `)}
             </div>
           </${motion.div}>
@@ -727,6 +892,81 @@ export function App() {
                 </${motion.div}>
               `;
             })}
+          </div>
+        </${motion.div}>
+
+        ${/* ── ROW 7: STRATEGY PANEL ── */ ""}
+        <${motion.div}
+          id="panel-strategy"
+          initial=${{ opacity: 0, y: 12 }}
+          animate=${{ opacity: 1, y: 0 }}
+          transition=${{ delay: 0.28 }}
+          className="border border-term-border rounded bg-term-panel"
+        >
+          <div className="flex items-center justify-between px-4 py-3 border-b border-term-border">
+            <h2 className="text-sm font-semibold text-term-bright">Strategy AI</h2>
+            <span className="text-2xs font-mono text-term-muted">${strategies.length} STRATEGIES</span>
+          </div>
+          <div className="p-3 space-y-3">
+            ${strategyMode === 'unavailable' ? html`
+              <div className="border border-accent-amber/30 rounded bg-accent-amber-dim px-4 py-3 text-xs font-mono text-accent-amber">
+                Strategy AI requires PostgreSQL mode (STORE_BACKEND=postgres)
+              </div>
+            ` : html`
+              ${strategyError ? html`
+                <div className="border border-accent-red/30 rounded bg-accent-red-dim px-3 py-2 text-xs font-mono text-accent-red">${strategyError}</div>
+              ` : null}
+              <div className="border border-dashed border-term-border rounded bg-term-surface px-3 py-2">
+                <div className="text-2xs font-mono text-term-muted mb-2 uppercase tracking-widest">Create Strategy</div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Describe your strategy (e.g. Momentum strategy for defense stocks)"
+                    value=${strategyPrompt}
+                    onChange=${(e: React.ChangeEvent<HTMLInputElement>) => setStrategyPrompt(e.target.value)}
+                    className="flex-1 bg-term-surface border border-term-border rounded px-2 py-1 text-xs font-mono text-term-text outline-none focus:border-accent-green/50"
+                  />
+                  <button
+                    onClick=${createStrategy}
+                    disabled=${strategyLoading}
+                    className="px-3 py-1 text-xs font-mono bg-accent-green/10 border border-accent-green/30 rounded text-accent-green hover:bg-accent-green/20 disabled:opacity-50"
+                  >${strategyLoading ? 'Creating...' : '+ Create'}</button>
+                </div>
+              </div>
+              ${strategies.length > 0 ? html`
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs font-mono">
+                    <thead>
+                      <tr className="border-b border-term-border text-term-muted">
+                        <th className="px-3 py-2 text-left text-2xs uppercase tracking-widest font-medium">Name</th>
+                        <th className="px-3 py-2 text-left text-2xs uppercase tracking-widest font-medium">Status</th>
+                        <th className="px-3 py-2 text-left text-2xs uppercase tracking-widest font-medium">Sector</th>
+                        <th className="px-3 py-2 text-left text-2xs uppercase tracking-widest font-medium">Tags</th>
+                        <th className="px-3 py-2 text-left text-2xs uppercase tracking-widest font-medium">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${strategies.map((s) => html`
+                        <tr className="border-b border-term-border/50 hover:bg-term-surface transition-colors">
+                          <td className="px-3 py-2 font-semibold text-term-bright">${s.name}</td>
+                          <td className="px-3 py-2"><span className="px-1.5 py-0.5 text-2xs rounded border ${s.status === 'active' ? 'border-accent-green/30 text-accent-green bg-accent-green-dim' : 'border-term-border text-term-muted'}">${s.status}</span></td>
+                          <td className="px-3 py-2 text-term-muted">${s.sector ?? '-'}</td>
+                          <td className="px-3 py-2 text-term-muted">${(s.tags ?? []).join(', ') || '-'}</td>
+                          <td className="px-3 py-2">
+                            <button
+                              onClick=${() => simulateStrategy(s.id)}
+                              className="px-2 py-0.5 text-2xs font-mono bg-accent-blue/10 border border-accent-blue/30 rounded text-accent-blue hover:bg-accent-blue/20"
+                            >Simulate</button>
+                          </td>
+                        </tr>
+                      `)}
+                    </tbody>
+                  </table>
+                </div>
+              ` : html`
+                <div className="text-xs text-term-muted text-center py-4">No strategies yet. Create one above.</div>
+              `}
+            `}
           </div>
         </${motion.div}>
 

@@ -55,6 +55,7 @@ import { MitJsonStore } from "./mit-store.js";
 import type { MitStore } from "./mit-store.js";
 import { MitPostgresStore } from "./mit-store-postgres.js";
 import { registerMitRoutes } from "./mit-routes.js";
+import { registerStrategyAiRoutes } from "./services/strategy-ai/routes.js";
 import { TelegramNotificationService, type HeroAlertPayload } from "./services/telegram-notifier.js";
 import { SurveillanceBot, getSurveillanceBot } from "./services/mit/surveillance-bot.js";
 import { TelegramFeatureService, getTelegramFeatureService } from "./services/telegram-feature-service.js";
@@ -1958,6 +1959,19 @@ async function buildServer() {
     });
     registerMitRoutes(scoped, { mitStore, store });
   });
+
+  // Strategy AI routes (PostgreSQL only)
+  const storeBackend = process.env.STORE_BACKEND ?? "json";
+  if (storeBackend === "postgres") {
+    await registerStrategyAiRoutes(app);
+  } else {
+    app.get("/api/strategies", async (_req, reply) => {
+      return reply.code(501).send({ error: "strategy-ai requires PostgreSQL; set STORE_BACKEND=postgres" });
+    });
+    app.post("/api/strategies", async (_req, reply) => {
+      return reply.code(501).send({ error: "strategy-ai requires PostgreSQL; set STORE_BACKEND=postgres" });
+    });
+  }
 
   // Telegram webhook for handling inline button callbacks and commands
   const telegramService = new TelegramNotificationService();
