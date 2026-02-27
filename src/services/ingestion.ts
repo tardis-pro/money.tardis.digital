@@ -25,12 +25,10 @@ async function fetchText(url: string): Promise<{ body: string; contentType: stri
   }
 }
 
-function fallbackBody(source: SourceRegistryItem): string {
-  const title = `${source.name} update`;
-  return normalizeWhitespace(
-    `${title}. Source ${source.id} generated fallback payload due to fetch limitations. ` +
-      "Policy and tender intelligence remains available in degraded mode.",
-  );
+/** Log fetch failure and return null — never store fake fallback artifacts. */
+function logFetchFailure(source: SourceRegistryItem, error: unknown): void {
+  const msg = error instanceof Error ? error.message : String(error);
+  console.warn(`[ingestion] Failed to fetch source ${source.id} (${source.url}): ${msg}`);
 }
 
 export class IngestionService {
@@ -68,9 +66,9 @@ export class IngestionService {
       const result = await this.fetchSourceBody(source);
       body = result.body;
       contentType = result.contentType;
-    } catch {
-      body = fallbackBody(source);
-      contentType = "text/plain";
+    } catch (error) {
+      logFetchFailure(source, error);
+      return null;
     }
 
     const contentHash = sha256(body);

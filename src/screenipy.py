@@ -444,6 +444,8 @@ def _detect_pattern_from_arrays(opens, highs, lows, closes):
 
 
 def fetch_real_data_scan(ticker_option, output_path):
+    """Fetch real data via yfinance+pandas, fallback to stdlib Yahoo fetch.
+    Never generates simulated data — fails hard if no real data available."""
     try:
         yf = importlib.import_module("yfinance")
         pd = importlib.import_module("pandas")
@@ -452,9 +454,7 @@ def fetch_real_data_scan(ticker_option, output_path):
         if fetch_real_data_scan_stdlib(ticker_option, output_path):
             print(f"Real-data scan complete (stdlib path) -> {output_path}", file=sys.stderr)
             return
-        print("stdlib Yahoo fetch returned no rows, falling back to simulated scan", file=sys.stderr)
-        generate_simulated_data(output_path)
-        return
+        raise RuntimeError("All real-data fetch paths failed. No simulated data allowed.")
 
     rows = []
     for ticker in _ticker_universe(ticker_option):
@@ -494,8 +494,7 @@ def fetch_real_data_scan(ticker_option, output_path):
             latest_ema20 = float(ema20.iloc[-1]) if not pd.isna(ema20.iloc[-1]) else latest_close
             latest_ema50 = float(ema50.iloc[-1]) if not pd.isna(ema50.iloc[-1]) else latest_close
 
-            rows.append(
-                {
+        rows.append({
                     "Stock": ticker,
                     "LTP": f"{latest_close:.2f}",
                     "Volume": str(latest_volume),
@@ -516,9 +515,7 @@ def fetch_real_data_scan(ticker_option, output_path):
             continue
 
     if not rows:
-        print("Real-data scan returned no rows, falling back to simulated data", file=sys.stderr)
-        generate_simulated_data(output_path)
-        return
+        raise RuntimeError("yfinance scan returned no rows. No simulated data allowed. Check network/Yahoo Finance connectivity.")
 
     rows.sort(key=lambda row: float(row["RSI"]), reverse=True)
     with open(output_path, "w", newline="") as f:
@@ -546,52 +543,14 @@ def fetch_real_data_scan(ticker_option, output_path):
 
     print(f"Real-data scan complete: {len(rows)} symbols written to {output_path}", file=sys.stderr)
 
+
 def run_scan(ticker_option, execute_option, output_path):
+    """Run stock scan using real market data only. Never falls back to simulated data."""
     if fetch_real_data_scan_stdlib(ticker_option, output_path):
         print(f"Real-data scan complete -> {output_path}", file=sys.stderr)
         return
     raise RuntimeError("Real-data scan failed - no simulated data allowed. Check NSE data source connectivity.")
 
-def generate_simulated_data(output_path):
-    """Generate realistic simulated NSE stock scan data when pkscreener is not available."""
-    import random
-    import datetime
-
-    all_stocks = NIFTY50 + NIFTY_NEXT_50
-    trends = ["Strong Up", "Up", "Sideways", "Weak", "Down"]
-    patterns = [
-        "Bullish Engulfing", "Morning Star", "Hammer", "Inverse H&S",
-        "Cup & Handle", "Breakout", "Consolidation", "Golden Cross",
-        "MACD Crossover", "RSI Oversold Bounce", "Volume Breakout",
-        "Trendline Support", "Moving Avg Support", "Double Bottom",
-        "Flag Pattern", "Ascending Triangle", "None"
-    ]
-
-    random.seed(int(datetime.datetime.now().timestamp()) % 10000)
-    selected = random.sample(all_stocks, min(len(all_stocks), 60))
-
-    rows = []
-    for stock in selected:
-        ltp = round(random.uniform(50, 5000), 2)
-        volume = random.randint(100000, 50000000)
-        rsi = round(random.uniform(20, 85), 1)
-        trend = random.choice(trends)
-        pattern = random.choice(patterns)
-        rows.append({
-            "Stock": stock,
-            "LTP": str(ltp),
-            "Volume": str(volume),
-            "RSI": str(rsi),
-            "Trend": trend,
-            "Pattern": pattern,
-        })
-
-    with open(output_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["Stock", "LTP", "Volume", "RSI", "Trend", "Pattern"])
-        writer.writeheader()
-        writer.writerows(rows)
-
-    print(f"Simulated scan: {len(rows)} stocks written to {output_path}", file=sys.stderr)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Screeni-py NSE stock scanner wrapper")

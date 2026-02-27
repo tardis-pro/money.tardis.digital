@@ -1,4 +1,4 @@
-import type { AuditRecord, ParsedDocument, RawArtifact, SignalRecord, SourceRegistryItem } from "../types.js";
+import type { AuditRecord, MirrorInsight, ParsedDocument, RawArtifact, SignalRecord, SourceRegistryItem } from "../types.js";
 import type { Store } from "../store.js";
 import { makeId, nowIso } from "../utils.js";
 import { AlertService } from "./alerts.js";
@@ -9,10 +9,12 @@ import { ImpactScorerService } from "./impact-scorer.js";
 import { IngestionService } from "./ingestion.js";
 import { ParserService } from "./parser.js";
 import { PredictionService } from "./prediction.js";
+import { MirrorAnalystService } from "./mirror-analyst.js";
 
 export interface PipelineRunResult {
   ingested: number;
   producedSignals: number;
+  mirrorEnriched: number;
   alertsCreated: number;
   sourcesProcessed: number;
 }
@@ -26,6 +28,7 @@ export class SignalPipelineService {
   private readonly predictionService: PredictionService;
   private readonly alertService: AlertService;
   private readonly dataQualityService: DataQualityService;
+  private readonly mirrorAnalyst: MirrorAnalystService;
 
   constructor(private readonly store: Store) {
     this.ingestionService = new IngestionService(store);
@@ -36,16 +39,23 @@ export class SignalPipelineService {
     this.predictionService = new PredictionService();
     this.alertService = new AlertService();
     this.dataQualityService = new DataQualityService(store);
+    this.mirrorAnalyst = new MirrorAnalystService();
+    if (this.mirrorAnalyst.isConfigured()) {
+      console.log("[pipeline] Mirror AI analyst enabled (MiniMax)");
+    }
   }
 
   private computeFinalScore(signal: SignalRecord): number {
     const directionBoost = signal.impact.direction === "positive" ? 0.08 : signal.impact.direction === "negative" ? 0.06 : 0;
+    const mirrorBoost = signal.mirrorInsight ? signal.mirrorInsight.impact * 0.01 : 0;
     return Math.min(
       1,
-      signal.impact.confidence * 0.35 +
-        signal.impact.magnitude * 0.25 +
-        signal.prediction.calibratedConfidence * 0.3 +
-        directionBoost,
+      signal.impact.confidence * 0.30 +
+        signal.impact.magnitude * 0.20 +
+        signal.prediction.calibratedConfidence * 0.25 +
+        directionBoost +
+        mirrorBoost +
+        (signal.mirrorInsight ? signal.mirrorInsight.confidence * 0.15 : 0),
     );
   }
 
@@ -76,8 +86,8 @@ export class SignalPipelineService {
       : await this.ingestionService.ingestAll();
 
     let producedSignals = 0;
+    let mirrorEnriched = 0;
     let alertsCreated = 0;
-
     for (const artifact of artifacts) {
       const freshState = await this.store.read();
       const source = freshState.sources.find((entry) => entry.id === artifact.sourceId);
@@ -96,8 +106,27 @@ export class SignalPipelineService {
         );
         continue;
       }
-      const event = this.classifierService.classify(artifact, source, parsed);
-      const linkedEntities = await this.entityLinkerService.link(event);
+      let event = this.classifierService.classify(artifact, source, parsed);
+      let linkedEntities = await this.entityLinkerService.link(event);
+      let mirrorInsight: MirrorInsight | undefined;
+
+      // Attempt Mirror AI enrichment (non-blocking)
+      const analysis = await this.mirrorAnalyst.analyze(parsed, source);
+      if (analysis) {
+        const enriched = this.mirrorAnalyst.enrichEvent(event, analysis);
+        event = enriched.event;
+        linkedEntities = [...linkedEntities, ...enriched.extraEntities];
+        mirrorInsight = {
+          headline: analysis.headline,
+          summary: analysis.summary,
+          narrative: analysis.narrative,
+          impact: analysis.impact,
+          bias: analysis.bias,
+          confidence: analysis.confidence,
+        };
+        mirrorEnriched += 1;
+      }
+
       const impact = this.impactScorerService.score(event, linkedEntities, source);
       const prediction = this.predictionService.predict(impact);
 
@@ -113,6 +142,7 @@ export class SignalPipelineService {
           prediction,
           score: 0,
           status: "active",
+          ...(mirrorInsight ? { mirrorInsight } : {}),
         };
         signal.score = this.computeFinalScore(signal);
         draft.signals.push(signal);
@@ -133,6 +163,7 @@ export class SignalPipelineService {
     return {
       ingested: artifacts.length,
       producedSignals,
+      mirrorEnriched,
       alertsCreated,
       sourcesProcessed: targetSources.length,
     };
