@@ -1,8 +1,41 @@
+import { z } from "zod";
 import { makeId, nowIso } from "../utils.js";
 
 export interface TelegramConfig {
   botToken: string;
   chatId: string;
+}
+
+const TelegramSendMessageResponseSchema = z.object({
+  ok: z.boolean(),
+  result: z.object({ message_id: z.number() }).passthrough().optional(),
+  description: z.string().optional(),
+});
+
+const TelegramAckResponseSchema = z.object({
+  ok: z.boolean(),
+  description: z.string().optional(),
+});
+
+async function parseTelegramJson<T>(
+  response: Response,
+  schema: z.ZodType<T>,
+  context: string
+): Promise<T | { __parseError: string }> {
+  let raw: unknown;
+  try {
+    raw = await response.json();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "json decode failed";
+    console.warn(`[telegram] ${context} non-JSON response: ${msg}`);
+    return { __parseError: `invalid JSON: ${msg}` };
+  }
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    console.warn(`[telegram] ${context} unexpected response shape: ${parsed.error.message}`);
+    return { __parseError: `unexpected response shape` };
+  }
+  return parsed.data;
 }
 
 export interface HeroAlertPayload {
@@ -48,13 +81,16 @@ export class TelegramNotificationService {
         }),
       });
 
-      const result = await response.json() as { ok: boolean; result?: { message_id: number }; description?: string };
-      
+      const result = await parseTelegramJson(response, TelegramSendMessageResponseSchema, "sendMessage");
+      if ("__parseError" in result) {
+        return { ok: false, error: result.__parseError };
+      }
+
       if (result.ok) {
         const msgId = result.result?.message_id;
         return msgId !== undefined ? { ok: true, messageId: msgId } : { ok: true };
       }
-      
+
       return { ok: false, error: result.description ?? "Unknown error" };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : "Network error" };
@@ -93,13 +129,16 @@ export class TelegramNotificationService {
         }),
       });
 
-      const result = await response.json() as { ok: boolean; result?: { message_id: number }; description?: string };
-      
+      const result = await parseTelegramJson(response, TelegramSendMessageResponseSchema, "sendHeroAlertWithButtons");
+      if ("__parseError" in result) {
+        return { ok: false, error: result.__parseError };
+      }
+
       if (result.ok) {
         const msgId = result.result?.message_id;
         return msgId !== undefined ? { ok: true, messageId: msgId } : { ok: true };
       }
-      
+
       const errMsg = result.description;
       return errMsg !== undefined ? { ok: false, error: errMsg } : { ok: false, error: "Unknown error" };
     } catch (err) {
@@ -146,7 +185,10 @@ export class TelegramNotificationService {
         }),
       });
 
-      const result = await response.json() as { ok: boolean; description?: string };
+      const result = await parseTelegramJson(response, TelegramAckResponseSchema, "answerCallbackQuery");
+      if ("__parseError" in result) {
+        return { ok: false, error: result.__parseError };
+      }
       if (result.ok) return { ok: true };
       const errMsg = result.description;
       return errMsg !== undefined ? { ok: false, error: errMsg } : { ok: false };
