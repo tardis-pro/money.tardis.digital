@@ -1648,20 +1648,30 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
     try {
       const files = await readdir(candlesDir);
       cachedTickers = files.filter(f => f.endsWith(".json")).map(f => f.replace(".json", ""));
-      if (cachedTickers.length > 0) {
-        const firstTicker = cachedTickers[0];
-        if (firstTicker !== undefined) {
-          const raw = await readFile(path.join(candlesDir, firstTicker + ".json"), "utf8");
+      // Try tickers in order until one yields a valid date range — a single
+      // corrupted cache file shouldn't blank the whole data-sources endpoint.
+      for (const ticker of cachedTickers) {
+        try {
+          const raw = await readFile(path.join(candlesDir, ticker + ".json"), "utf8");
           const sample: unknown = JSON.parse(raw);
           if (Array.isArray(sample) && sample.length > 0) {
             const first = sample[0] as Record<string, unknown>;
             const last = sample[sample.length - 1] as Record<string, unknown>;
             if (typeof first["date"] === "string") oldestDate = first["date"];
             if (typeof last["date"] === "string") newestDate = last["date"];
+            if (oldestDate !== "unknown" && newestDate !== "unknown") break;
           }
+        } catch (err) {
+          console.warn(`[mit/data/sources] skipping unreadable candle cache ${ticker}.json:`, err instanceof Error ? err.message : err);
         }
       }
-    } catch { /* dir may not exist */ }
+    } catch (err) {
+      // readdir failed — directory likely doesn't exist yet
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== "ENOENT") {
+        console.warn(`[mit/data/sources] readdir failed:`, err instanceof Error ? err.message : err);
+      }
+    }
 
     return reply.send({
       sources: [
