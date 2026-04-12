@@ -16,6 +16,12 @@ export function computeEntryExitPlan(input: EntryExitInput): EntryExitPlan | nul
   if (!latest || input.technicals.dma50 === null) {
     return null;
   }
+  // Defence in depth: downstream helpers need non-empty windows. The latest
+  // check guarantees length >= 1, but an explicit guard here makes the
+  // invariant obvious and survives future refactors.
+  if (input.candles.length === 0) {
+    return null;
+  }
 
   const dma50 = input.technicals.dma50;
   const extended = latest.close > dma50 * 1.15;
@@ -25,7 +31,15 @@ export function computeEntryExitPlan(input: EntryExitInput): EntryExitPlan | nul
 
   const tone = input.marketTone ?? "neutral";
   const nearDma = latest.close >= dma50 * 0.97 && latest.close <= dma50 * 1.03;
-  const resistance = highestClose(input.candles, 60);
+  let resistance: number;
+  let structuralSupportEarly: number;
+  try {
+    resistance = highestClose(input.candles, 60);
+    structuralSupportEarly = lowestLow(input.candles, 20);
+  } catch (err) {
+    console.warn(`[entry-exit-calc] ${input.ticker} window computation failed:`, err instanceof Error ? err.message : err);
+    return null;
+  }
   const breakoutRetest = latest.close <= resistance * 1.02 && latest.close >= resistance * 0.98;
 
   // Blueprint Section 3: risk-off → narrow buy zones; risk-on → allow breakout entries
@@ -34,7 +48,7 @@ export function computeEntryExitPlan(input: EntryExitInput): EntryExitPlan | nul
   const buyZoneHigh = nearDma ? dma50 * zoneSpread.hi : breakoutRetest ? resistance * (zoneSpread.hi - 0.01) : latest.close * zoneSpread.hi;
   const mid = (buyZoneLow + buyZoneHigh) / 2;
 
-  const structuralSupport = lowestLow(input.candles, 20);
+  const structuralSupport = structuralSupportEarly;
   // Blueprint Section 3: risk-on breakouts use tighter stops (5% instead of 6%)
   const effectiveStopPct = tone === "risk-on" && breakoutRetest ? Math.min(input.stopPct, 0.05) : input.stopPct;
   const stopFromPct = mid * (1 - effectiveStopPct);
@@ -126,12 +140,37 @@ function computeInvalidation(fundamentals: FundamentalSnapshot | undefined): str
   return conditions;
 }
 
+// Fold-based helpers so huge candle arrays can't hit argument-count limits
+// on Math.max/min(...spread), and an empty window surfaces as an explicit
+// error instead of ±Infinity silently poisoning buy-zone math downstream.
 function highestClose(candles: DailyCandle[], lookback: number): number {
-  const recent = candles.slice(-lookback);
-  return Math.max(...recent.map((c) => c.close));
+  const start = Math.max(0, candles.length - lookback);
+  if (start >= candles.length) {
+    throw new Error("highestClose called on empty candle window");
+  }
+  let hi = -Infinity;
+  for (let i = start; i < candles.length; i++) {
+    const c = candles[i];
+    if (c && c.close > hi) hi = c.close;
+  }
+  if (!Number.isFinite(hi)) {
+    throw new Error("highestClose produced non-finite result");
+  }
+  return hi;
 }
 
 function lowestLow(candles: DailyCandle[], lookback: number): number {
-  const recent = candles.slice(-lookback);
-  return Math.min(...recent.map((c) => c.low));
+  const start = Math.max(0, candles.length - lookback);
+  if (start >= candles.length) {
+    throw new Error("lowestLow called on empty candle window");
+  }
+  let lo = Infinity;
+  for (let i = start; i < candles.length; i++) {
+    const c = candles[i];
+    if (c && c.low < lo) lo = c.low;
+  }
+  if (!Number.isFinite(lo)) {
+    throw new Error("lowestLow produced non-finite result");
+  }
+  return lo;
 }
