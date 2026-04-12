@@ -17,6 +17,59 @@ const TelegramAckResponseSchema = z.object({
   description: z.string().optional(),
 });
 
+const TELEGRAM_REQUEST_TIMEOUT_MS = 8_000;
+const TELEGRAM_MAX_ATTEMPTS = 3;
+const TELEGRAM_BACKOFF_BASE_MS = 500;
+
+async function postTelegram(
+  url: string,
+  body: unknown,
+  context: string
+): Promise<{ ok: true; response: Response } | { ok: false; error: string }> {
+  let lastError = "unknown";
+  for (let attempt = 1; attempt <= TELEGRAM_MAX_ATTEMPTS; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TELEGRAM_REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      // 4xx other than 429 are permanent — don't retry, return the response
+      // so the caller can parse the description and surface it.
+      if (response.status === 429 || response.status >= 500) {
+        lastError = `http ${response.status}`;
+        if (attempt < TELEGRAM_MAX_ATTEMPTS) {
+          const retryAfterHeader = response.headers.get("retry-after");
+          const retryAfterMs = retryAfterHeader ? Number(retryAfterHeader) * 1000 : NaN;
+          const backoff = Number.isFinite(retryAfterMs) && retryAfterMs > 0
+            ? retryAfterMs
+            : TELEGRAM_BACKOFF_BASE_MS * Math.pow(2, attempt - 1);
+          console.warn(`[telegram] ${context} attempt ${attempt} got ${response.status}, retrying in ${backoff}ms`);
+          await new Promise((r) => setTimeout(r, backoff));
+          continue;
+        }
+      }
+      return { ok: true, response };
+    } catch (err) {
+      clearTimeout(timer);
+      const msg = err instanceof Error ? err.message : "network error";
+      lastError = msg;
+      if (attempt < TELEGRAM_MAX_ATTEMPTS) {
+        const backoff = TELEGRAM_BACKOFF_BASE_MS * Math.pow(2, attempt - 1);
+        console.warn(`[telegram] ${context} attempt ${attempt} failed: ${msg}, retrying in ${backoff}ms`);
+        await new Promise((r) => setTimeout(r, backoff));
+        continue;
+      }
+    }
+  }
+  console.warn(`[telegram] ${context} giving up after ${TELEGRAM_MAX_ATTEMPTS} attempts: ${lastError}`);
+  return { ok: false, error: lastError };
+}
+
 async function parseTelegramJson<T>(
   response: Response,
   schema: z.ZodType<T>,
@@ -68,33 +121,29 @@ export class TelegramNotificationService {
     }
 
     const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
-    
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: this.chatId,
-          text,
-          ...(parseMode ? { parse_mode: parseMode } : {}),
-          disable_web_page_preview: true,
-        }),
-      });
+    const post = await postTelegram(
+      url,
+      {
+        chat_id: this.chatId,
+        text,
+        ...(parseMode ? { parse_mode: parseMode } : {}),
+        disable_web_page_preview: true,
+      },
+      "sendMessage"
+    );
+    if (!post.ok) return { ok: false, error: post.error };
 
-      const result = await parseTelegramJson(response, TelegramSendMessageResponseSchema, "sendMessage");
-      if ("__parseError" in result) {
-        return { ok: false, error: result.__parseError };
-      }
-
-      if (result.ok) {
-        const msgId = result.result?.message_id;
-        return msgId !== undefined ? { ok: true, messageId: msgId } : { ok: true };
-      }
-
-      return { ok: false, error: result.description ?? "Unknown error" };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : "Network error" };
+    const result = await parseTelegramJson(post.response, TelegramSendMessageResponseSchema, "sendMessage");
+    if ("__parseError" in result) {
+      return { ok: false, error: result.__parseError };
     }
+
+    if (result.ok) {
+      const msgId = result.result?.message_id;
+      return msgId !== undefined ? { ok: true, messageId: msgId } : { ok: true };
+    }
+
+    return { ok: false, error: result.description ?? "Unknown error" };
   }
 
   async sendHeroAlertWithButtons(
@@ -110,41 +159,36 @@ export class TelegramNotificationService {
     const callbackDataPass = `hero_pass:${callbackToken}`;
 
     const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
-    
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: this.chatId,
-          text: `🎯 QVM-Hybrid Alert\n\n${heroBrief}`,
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: "✅ EXECUTE HERO TRADE", callback_data: callbackDataExecute },
-                { text: "❌ PASS", callback_data: callbackDataPass },
-              ],
+    const post = await postTelegram(
+      url,
+      {
+        chat_id: this.chatId,
+        text: `🎯 QVM-Hybrid Alert\n\n${heroBrief}`,
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "✅ EXECUTE HERO TRADE", callback_data: callbackDataExecute },
+              { text: "❌ PASS", callback_data: callbackDataPass },
             ],
-          },
-        }),
-      });
+          ],
+        },
+      },
+      "sendHeroAlertWithButtons"
+    );
+    if (!post.ok) return { ok: false, error: post.error };
 
-      const result = await parseTelegramJson(response, TelegramSendMessageResponseSchema, "sendHeroAlertWithButtons");
-      if ("__parseError" in result) {
-        return { ok: false, error: result.__parseError };
-      }
-
-      if (result.ok) {
-        const msgId = result.result?.message_id;
-        return msgId !== undefined ? { ok: true, messageId: msgId } : { ok: true };
-      }
-
-      const errMsg = result.description;
-      return errMsg !== undefined ? { ok: false, error: errMsg } : { ok: false, error: "Unknown error" };
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : "Network error";
-      return { ok: false, error: errMsg };
+    const result = await parseTelegramJson(post.response, TelegramSendMessageResponseSchema, "sendHeroAlertWithButtons");
+    if ("__parseError" in result) {
+      return { ok: false, error: result.__parseError };
     }
+
+    if (result.ok) {
+      const msgId = result.result?.message_id;
+      return msgId !== undefined ? { ok: true, messageId: msgId } : { ok: true };
+    }
+
+    const errMsg = result.description;
+    return errMsg !== undefined ? { ok: false, error: errMsg } : { ok: false, error: "Unknown error" };
   }
 
   getHeroPayloadFromToken(token: string): HeroAlertPayload | null {
@@ -174,28 +218,20 @@ export class TelegramNotificationService {
     }
 
     const url = `https://api.telegram.org/bot${this.botToken}/answerCallbackQuery`;
-    
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          callback_query_id: callbackQueryId,
-          text,
-        }),
-      });
+    const post = await postTelegram(
+      url,
+      { callback_query_id: callbackQueryId, text },
+      "answerCallbackQuery"
+    );
+    if (!post.ok) return { ok: false, error: post.error };
 
-      const result = await parseTelegramJson(response, TelegramAckResponseSchema, "answerCallbackQuery");
-      if ("__parseError" in result) {
-        return { ok: false, error: result.__parseError };
-      }
-      if (result.ok) return { ok: true };
-      const errMsg = result.description;
-      return errMsg !== undefined ? { ok: false, error: errMsg } : { ok: false };
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : "Network error";
-      return { ok: false, error: errMsg };
+    const result = await parseTelegramJson(post.response, TelegramAckResponseSchema, "answerCallbackQuery");
+    if ("__parseError" in result) {
+      return { ok: false, error: result.__parseError };
     }
+    if (result.ok) return { ok: true };
+    const errMsg = result.description;
+    return errMsg !== undefined ? { ok: false, error: errMsg } : { ok: false };
   }
 
   async sendHeroAlert(heroBrief: string): Promise<{ ok: boolean; error?: string }> {
