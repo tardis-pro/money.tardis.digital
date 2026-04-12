@@ -15,7 +15,7 @@ import type {
   AnalystQueryRequest,
   CoderFeatureRequest,
 } from "./mit-types.js";
-import mitUniverse from "./config/mit-universe.json" with { type: "json" };
+import { MIT_UNIVERSE } from "./services/mit/universe-loader.js";
 import { evaluateNtLiteChecklist } from "./services/mit/nt-lite-checklist.js";
 import { computePeerMedianPEBySector, peerMedianForTicker } from "./services/mit/peer-comparison.js";
 import { detectMarketTone, governanceFlagsForTicker } from "./services/mit/sentiment-overlay.js";
@@ -321,7 +321,7 @@ export function registerMitRoutes(app: FastifyInstance, deps: { mitStore: MitSto
   const chartGenerator = new ChartGenerator({ marketData });
   const stockLinksService = new StockLinksService();
   const historicalAnalysisService = new HistoricalAnalysisService({ marketData });
-  const universe = mitUniverse as MitUniverseEntry[];
+  const universe: MitUniverseEntry[] = [...MIT_UNIVERSE];
 
   setupIntradayPriceScheduler(deps, marketData);
 

@@ -10,7 +10,7 @@ import type {
   MitUniverseEntry,
 } from "../../mit-types.js";
 import type { MitStore } from "../../mit-store.js";
-import mitUniverse from "../../config/mit-universe.json" with { type: "json" };
+import { MIT_UNIVERSE } from "./universe-loader.js";
 import { scoreComposite } from "./composite-scorer.js";
 import { evaluateNtLiteChecklist } from "./nt-lite-checklist.js";
 import { computePeerMedianPEBySector, peerMedianForTicker } from "./peer-comparison.js";
@@ -58,7 +58,7 @@ export class AnalystAgent {
   private readonly universe: MitUniverseEntry[];
 
   constructor(private readonly deps: { mitStore: MitStore; marketData: MarketDataService }) {
-    this.universe = mitUniverse as MitUniverseEntry[];
+    this.universe = [...MIT_UNIVERSE];
   }
 
   async analyzeFundamentals(ticker: string): Promise<FundamentalAnalysis> {

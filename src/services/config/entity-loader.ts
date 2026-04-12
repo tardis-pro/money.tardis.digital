@@ -4,10 +4,14 @@
  */
 
 import { BaseConfigurationLoader, ConfigurationSource, normalizeText } from './base-loader.js';
-import mitUniverseRaw from '../../config/mit-universe.json' with { type: 'json' };
+import { MIT_UNIVERSE as VALIDATED_MIT_UNIVERSE } from '../mit/universe-loader.js';
 
 interface UniverseTicker { ticker: string; name: string; sector: string; }
-const MIT_UNIVERSE = mitUniverseRaw as UniverseTicker[];
+const MIT_UNIVERSE: UniverseTicker[] = VALIDATED_MIT_UNIVERSE.map((row) => ({
+  ticker: row.ticker,
+  name: row.name,
+  sector: row.sector,
+}));
 
 export interface EntityMetadata {
   ticker: string;

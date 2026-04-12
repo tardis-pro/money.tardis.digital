@@ -1,7 +1,7 @@
 import type { DailyCandle, FundamentalSnapshot, MitWatchlistIdea, TechnicalSnapshot } from "../../mit-types.js";
 import { atrPct, beta, calculateReturns, rSquared, sma } from "./technical-indicators.js";
 import { MarketDataService } from "./market-data.js";
-import mitUniverse from "../../config/mit-universe.json" with { type: "json" };
+import { MIT_UNIVERSE } from "./universe-loader.js";
 
 export interface HeroScore {
   symbol: string;
@@ -56,7 +56,7 @@ export class HeroAnalyst {
   private marketData: MarketDataService | null = null;
   private benchmarkCache: Map<string, DailyCandle[]> = new Map();
   private readonly sectorByTicker = new Map(
-    (mitUniverse as Array<{ ticker: string; sector: string }>).map((row) => [row.ticker.toUpperCase(), row.sector.toLowerCase()]),
+    MIT_UNIVERSE.map((row) => [row.ticker.toUpperCase(), row.sector.toLowerCase()]),
   );
 
   constructor(private config?: { weights?: typeof DEFAULT_WEIGHTS; thresholds?: typeof DEFAULT_THRESHOLDS }) {
