@@ -37,12 +37,21 @@ const DEFAULT_RULES: DeduplicationRule[] = [
 ];
 
 // In-memory stores (replace with Redis in production)
+// All three layer stores below are bounded by DEDUP_MAX_ENTRIES and a
+// DEDUP_MAX_AGE_MS sweep — in a long-running server they previously grew
+// without limit. Redis remains the correct production backing, but until
+// that lands, unbounded Maps are worse than an LRU+TTL cache because
+// process memory eventually OOMs on a busy ingestion day.
+const DEDUP_MAX_ENTRIES = 50_000;
+const DEDUP_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
 interface ContentHashEntry {
   artifactId: string;
   hash: string;
   sourceId: string;
   publishedAt: string;
   title: string;
+  insertedAt: number;
 }
 
 class ContentHashStore {
@@ -53,6 +62,12 @@ class ContentHashStore {
   }
 
   set(hash: string, entry: ContentHashEntry): void {
+    this.evictIfNeeded();
+    // Map iteration order is insertion order, so deleting + re-setting
+    // gives us simple LRU-by-insertion semantics.
+    if (this.store.has(hash)) {
+      this.store.delete(hash);
+    }
     this.store.set(hash, entry);
   }
 
@@ -63,6 +78,26 @@ class ContentHashStore {
   findByContent(content: string): ContentHashEntry | undefined {
     const hash = this.computeHash(content);
     return this.get(hash);
+  }
+
+  private evictIfNeeded(): void {
+    const now = Date.now();
+    // Age-based sweep: drop entries older than the window.
+    for (const [hash, entry] of this.store) {
+      if (now - entry.insertedAt > DEDUP_MAX_AGE_MS) {
+        this.store.delete(hash);
+      } else {
+        // Iteration is insertion-order, so once we hit a fresh one the
+        // rest are fresher. Safe to stop.
+        break;
+      }
+    }
+    // Size cap: drop oldest until we're back under the limit.
+    while (this.store.size >= DEDUP_MAX_ENTRIES) {
+      const oldest = this.store.keys().next().value;
+      if (oldest === undefined) break;
+      this.store.delete(oldest);
+    }
   }
 
   private computeHash(content: string): string {
@@ -111,7 +146,8 @@ export class ContentHashDeduplicator {
       hash,
       sourceId: artifact.sourceId,
       publishedAt: artifact.publishedAt,
-      title: artifact.title
+      title: artifact.title,
+      insertedAt: Date.now(),
     });
   }
 
@@ -160,7 +196,17 @@ export class FuzzyDeduplicator {
   }
 
   async addArtifact(artifact: Artifact): Promise<void> {
+    // Same LRU-by-insertion + size cap as ContentHashStore. This Map
+    // used to grow for the lifetime of the process.
+    if (this.store.has(artifact.id)) {
+      this.store.delete(artifact.id);
+    }
     this.store.set(artifact.id, artifact);
+    while (this.store.size > DEDUP_MAX_ENTRIES) {
+      const oldest = this.store.keys().next().value;
+      if (oldest === undefined) break;
+      this.store.delete(oldest);
+    }
   }
 
   private generateShingles(text: string, n: number): Set<string> {
@@ -257,7 +303,17 @@ export class SemanticDeduplicator {
 
   async addArtifact(artifact: Artifact): Promise<void> {
     const embedding = await this.generateEmbedding(`${artifact.title} ${artifact.content}`);
+    // Same LRU-by-insertion + size cap as the other layers. Embeddings
+    // are ~100 floats each so memory matters more here than elsewhere.
+    if (this.store.has(artifact.id)) {
+      this.store.delete(artifact.id);
+    }
     this.store.set(artifact.id, { artifact, embedding });
+    while (this.store.size > DEDUP_MAX_ENTRIES) {
+      const oldest = this.store.keys().next().value;
+      if (oldest === undefined) break;
+      this.store.delete(oldest);
+    }
   }
 
   private cosineSimilarity(a: number[], b: number[]): number {
