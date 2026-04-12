@@ -5,21 +5,7 @@
  */
 
 import type { FundamentalSnapshot } from "../../mit-types.js";
-
-/** Retry with exponential backoff + jitter (1s, 2s, 4s base delays). */
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      if (attempt === maxRetries) throw err;
-      const delay = Math.pow(2, attempt) * 1000 + Math.random() * 500;
-      console.warn(`[rate-limit] screener-fetcher retry ${attempt + 1}/${maxRetries} after ${Math.round(delay)}ms`);
-      await new Promise<void>(r => setTimeout(r, delay));
-    }
-  }
-  throw new Error('unreachable');
-}
+import { withRetry } from "../../utils/with-retry.js";
 
 export interface ScreenerFundamentalsData {
   ticker: string;
@@ -94,7 +80,7 @@ export class ScreenerFundamentalsFetcher {
 
     for (const ticker of tickers) {
       try {
-        const data = await withRetry(() => this.fetchTicker(ticker));
+        const data = await withRetry(() => this.fetchTicker(ticker), { label: "screener-fetcher" });
         if (data) {
           success.push(data);
         } else {

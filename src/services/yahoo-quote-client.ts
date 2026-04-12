@@ -4,6 +4,8 @@
  * Returns ~15 minute delayed data for free tier.
  */
 
+import { withRetry } from "../utils/with-retry.js";
+
 export interface YahooQuote {
   ticker: string;
   regularMarketPrice: number;
@@ -20,21 +22,6 @@ export interface QuoteBatchResult {
 }
 
 const YAHOO_QUOTE_URL = "https://query1.finance.yahoo.com/v7/finance/quote";
-
-/** Retry with exponential backoff + jitter (1s, 2s, 4s base delays). */
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      if (attempt === maxRetries) throw err;
-      const delay = Math.pow(2, attempt) * 1000 + Math.random() * 500;
-      console.warn(`[rate-limit] yahoo-quote retry ${attempt + 1}/${maxRetries} after ${Math.round(delay)}ms`);
-      await new Promise<void>(r => setTimeout(r, delay));
-    }
-  }
-  throw new Error('unreachable');
-}
 
 export async function fetchQuotes(tickers: string[]): Promise<QuoteBatchResult> {
   const symbols = tickers.map(t => `${t.toUpperCase()}.NS`).join(",");
@@ -55,7 +42,7 @@ export async function fetchQuotes(tickers: string[]): Promise<QuoteBatchResult> 
         throw new Error('rate-limit-429');
       }
       return r;
-    });
+    }, { label: "yahoo-quote" });
 
     if (!response.ok) {
       return { quotes: new Map(), failedTickers: tickers, fetchedAt };
