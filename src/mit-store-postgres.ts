@@ -7,12 +7,26 @@
  */
 
 import { Pool } from "pg";
+import { z } from "zod";
 import type { MitStore } from "./mit-store.js";
 import type { MitState, MitMarketTone } from "./mit-types.js";
 import path from "node:path";
 import { ensureDir } from "./utils.js";
 
 const SCHEMA = "mit";
+
+// pg's json_agg returns numerics as strings, so each field is validated as
+// string-or-number and coerced to number. A malformed row logs + is dropped
+// rather than poisoning downstream math with NaN.
+const PgCandleRowSchema = z.object({
+  date: z.string(),
+  open: z.union([z.string(), z.number()]),
+  high: z.union([z.string(), z.number()]),
+  low: z.union([z.string(), z.number()]),
+  close: z.union([z.string(), z.number()]),
+  volume: z.union([z.string(), z.number()]),
+});
+const PgCandleArraySchema = z.array(PgCandleRowSchema);
 
 export class MitPostgresStore implements MitStore {
   private transactionQueue: Promise<void> = Promise.resolve();
@@ -272,9 +286,22 @@ export class MitPostgresStore implements MitStore {
 
     const candles: Record<string, unknown[]> = {};
     for (const r of candlesRes.rows) {
-      candles[r.ticker] = (r.candles as Array<{ date: string; open: string; high: string; low: string; close: string; volume: string }>).map(
-        (c) => ({ date: c.date, open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close), volume: Number(c.volume) }),
-      );
+      const parsed = PgCandleArraySchema.safeParse(r.candles);
+      if (!parsed.success) {
+        console.warn(
+          `[mit-store-postgres] dropping malformed candles for ${r.ticker}: ${parsed.error.issues.length} issue(s)`,
+        );
+        candles[r.ticker] = [];
+        continue;
+      }
+      candles[r.ticker] = parsed.data.map((c) => {
+        const open = Number(c.open);
+        const high = Number(c.high);
+        const low = Number(c.low);
+        const close = Number(c.close);
+        const volume = Number(c.volume);
+        return { date: c.date, open, high, low, close, volume };
+      });
     }
 
     const marketTone = (globalStateRes.rows[0]?.market_tone ?? "neutral") as MitMarketTone;
